@@ -1,10 +1,11 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { useEffect, useState } from 'react'
 import { MAX_TRACKS } from '../model.ts'
 import { getEngine } from './engine.ts'
 import { Icon } from './icons.tsx'
 import { INSTRUMENT_LABELS, listInstruments } from './instruments.ts'
 import { PianoRoll } from './PianoRoll.tsx'
-import { SONG_PRESETS } from './presets.ts'
+import { Popover } from './Popover.tsx'
+import { ProjectPanel } from './ProjectPanel.tsx'
 import { getProjectStore } from './project-store.ts'
 import { useSidebarWide } from './sidebar-state.ts'
 import { ensureStyles, rangeFill, trackColor } from './styles.ts'
@@ -21,6 +22,7 @@ const ERRORS: Record<string, string> = {
   profile_unavailable: '当前环境暂不支持写入工程文件',
   load_failed: '读取工程失败，请稍后重试',
   save_failed: '保存工程失败，请稍后重试',
+  invalid_import: '这个文件不是合成器工程，无法导入',
 }
 
 /** Turn a store error code or a raw fetch failure into a sentence the user can act on. */
@@ -111,75 +113,26 @@ export function Editor(): JSX.Element {
         </div>
 
         <div className="dsyn-group">
-          <span className="dsyn-status" aria-live="polite">
-            {state.saving ? '保存中…' : state.error === null ? '已保存' : ''}
-          </span>
-          <input
-            aria-label="工程名称"
-            title="当前工程名称，可直接修改"
-            value={project.name}
-            onChange={(event) => { store.rename(event.target.value) }}
-            className="dsyn-field is-quiet"
-            style={{ width: 200, fontWeight: 600, fontSize: 13 }}
-          />
-          <Popover label="打开工程" trigger={<>打开<Icon name="chevronDown" size={12} /></>}>
-            {(close) => (
-              <div style={{ maxHeight: 320, overflowY: 'auto' }}>
-                {state.projects.map((item) => (
-                  <MenuItem
-                    key={item.id}
-                    label={item.name}
-                    detail={item.id === project.id ? '当前' : undefined}
-                    onSelect={() => {
-                      close()
-                      if (item.id !== project.id) void run(() => store.selectProject(item.id))
-                    }}
-                  />
-                ))}
-              </div>
-            )}
-          </Popover>
+          {state.saveFailed && !state.saving ? (
+            <button
+              type="button"
+              className="dsyn-btn is-small is-danger"
+              aria-pressed="true"
+              title="最近的改动还没有保存到 DSH，点击重试"
+              onClick={() => { void store.flush() }}
+            >
+              未保存 · 重试
+            </button>
+          ) : (
+            <span className="dsyn-status" aria-live="polite">{state.saving ? '保存中…' : '已保存'}</span>
+          )}
           <Popover
-            label="新建"
-            trigger={<><Icon name="plus" />新建<Icon name="chevronDown" size={12} /></>}
+            label={`工程：${project.name}`}
+            buttonClassName="dsyn-project-button"
+            menuClassName="is-panel"
+            trigger={<><span>{project.name}</span><Icon name="chevronDown" size={12} /></>}
           >
-            {(close) => (
-              <>
-                <MenuItem
-                  label="空白工程"
-                  onSelect={() => {
-                    close()
-                    void run(() => store.newProject(true))
-                  }}
-                />
-                <div className="dsyn-menu-rule" />
-                <div className="dsyn-menu-title">从示范曲开始</div>
-                {SONG_PRESETS.map((preset) => (
-                  <MenuItem
-                    key={preset.id}
-                    label={preset.title}
-                    detail={`${preset.bpm} BPM`}
-                    onSelect={() => {
-                      close()
-                      void run(async () => {
-                        await store.loadSongPreset(preset.id)
-                        startPlayback()
-                      })
-                    }}
-                  />
-                ))}
-                <MenuItem
-                  label="随机生成一首"
-                  onSelect={() => {
-                    close()
-                    void run(async () => {
-                      await store.loadRandomGroove()
-                      startPlayback()
-                    })
-                  }}
-                />
-              </>
-            )}
+            {(close) => <ProjectPanel state={state} close={close} run={run} />}
           </Popover>
           <span className="dsyn-sep" aria-hidden="true" />
           <button
@@ -192,17 +145,6 @@ export function Editor(): JSX.Element {
           >
             <Icon name="undo" />
           </button>
-          <button
-            type="button"
-            aria-label="删除当前工程"
-            title="删除当前工程"
-            onClick={() => {
-              if (window.confirm(`确定删除工程「${project.name}」吗？此操作无法撤销。`)) void run(() => store.removeProject())
-            }}
-            className="dsyn-btn is-icon"
-          >
-            <Icon name="trash" />
-          </button>
           <Popover label="玩法与快捷键" trigger={<Icon name="help" />} icon>
             {() => (
               <div className="dsyn-help">
@@ -212,6 +154,7 @@ export function Editor(): JSX.Element {
                   <dt><kbd>空格</kbd></dt><dd>播放 / 暂停（焦点在网格时）</dd>
                   <dt><kbd>A</kbd>–<kbd>L</kbd></dt><dd>用电脑键盘弹奏，<kbd>Z</kbd> <kbd>X</kbd> 切换八度</dd>
                   <dt><kbd>⌘Z</kbd></dt><dd>撤销上一步</dd>
+                  <dt>工程</dt><dd>点击工程名可切换、复制、导出、导入；改动会自动保存</dd>
                   <dt>后台播放</dt><dd>回到对话后音乐继续，侧栏底部可暂停和静音</dd>
                 </dl>
               </div>
@@ -324,63 +267,45 @@ export function Editor(): JSX.Element {
 
         <PianoRoll track={selected} bars={project.bars} playing={state.playing} />
       </div>
+
+      {state.lastDeleted !== null ? (
+        <DeletedToast
+          key={state.lastDeleted.id}
+          name={state.lastDeleted.name}
+          onUndo={() => { void run(() => store.restoreDeleted()) }}
+          onDismiss={() => { store.dismissDeleted() }}
+        />
+      ) : null}
     </div>
   )
 }
 
-/** Button with a dropdown that closes on outside click or Escape. */
-function Popover({
-  label,
-  trigger,
-  icon = false,
-  children,
+const UNDO_DELETE_MS = 10_000
+
+/** Shown after a delete. The project can be restored until this goes away. */
+function DeletedToast({
+  name,
+  onUndo,
+  onDismiss,
 }: {
-  label: string
-  trigger: ReactNode
-  icon?: boolean
-  children: (close: () => void) => ReactNode
+  name: string
+  onUndo: () => void
+  onDismiss: () => void
 }): JSX.Element {
-  const [open, setOpen] = useState(false)
-  const root = useRef<HTMLDivElement>(null)
   useEffect(() => {
-    if (!open) return
-    const onDown = (event: MouseEvent): void => {
-      if (root.current !== null && event.target instanceof Node && !root.current.contains(event.target)) setOpen(false)
-    }
-    const onKey = (event: KeyboardEvent): void => {
-      if (event.key === 'Escape') setOpen(false)
-    }
-    window.addEventListener('mousedown', onDown)
-    window.addEventListener('keydown', onKey)
-    return () => {
-      window.removeEventListener('mousedown', onDown)
-      window.removeEventListener('keydown', onKey)
-    }
-  }, [open])
+    const timer = setTimeout(onDismiss, UNDO_DELETE_MS)
+    return () => { clearTimeout(timer) }
+    // The toast is keyed by project id, so one timer per deletion is what we want.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
   return (
-    <div ref={root} className="dsyn-pop">
-      <button
-        type="button"
-        aria-label={label}
-        aria-haspopup="true"
-        aria-expanded={open}
-        title={icon ? label : undefined}
-        onClick={() => { setOpen(!open) }}
-        className={`dsyn-btn${icon ? ' is-icon' : ''}`}
-      >
-        {trigger}
+    <div role="status" className="dsyn-toast">
+      <span>已删除「{name}」</span>
+      <button type="button" className="dsyn-btn is-small" onClick={onUndo}>撤销</button>
+      <button type="button" aria-label="关闭" className="dsyn-btn is-small is-icon is-quiet" onClick={onDismiss}>
+        <Icon name="close" size={14} />
       </button>
-      {open ? <div className="dsyn-menu">{children(() => { setOpen(false) })}</div> : null}
     </div>
-  )
-}
-
-function MenuItem({ label, detail, onSelect }: { label: string; detail?: string; onSelect: () => void }): JSX.Element {
-  return (
-    <button type="button" className="dsyn-menu-item" onClick={onSelect}>
-      <span>{label}</span>
-      {detail !== undefined ? <span>{detail}</span> : null}
-    </button>
   )
 }
 

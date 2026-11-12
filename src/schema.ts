@@ -57,6 +57,8 @@ export const projectSchema = z.strictObject({
   beatsPerBar: z.literal(BEATS_PER_BAR),
   bars: z.number().int().min(1).max(MAX_BARS),
   loop: z.boolean(),
+  scaleRoot: z.number().int().min(0).max(11).optional(),
+  scaleId: z.string().min(1).max(32).optional(),
   tracks: z.array(trackSchema).min(1).max(MAX_TRACKS),
 }).superRefine((project, ctx) => {
   const loopBeats = project.bars * project.beatsPerBar

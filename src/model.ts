@@ -86,6 +86,9 @@ export interface Project {
   beatsPerBar: typeof BEATS_PER_BAR
   bars: number
   loop: boolean
+  /** Scale used for grid shading and generated phrases: root pitch class 0..11 and a scale id. */
+  scaleRoot?: number | undefined
+  scaleId?: string | undefined
   tracks: Track[]
 }
 
@@ -211,6 +214,13 @@ export function sanitizeProject(project: Project): Project {
     return baseTrack
   })
 
+  const scaleRoot = typeof project.scaleRoot === 'number' && Number.isFinite(project.scaleRoot)
+    ? ((Math.round(project.scaleRoot) % 12) + 12) % 12
+    : undefined
+  const scaleId = typeof project.scaleId === 'string' && project.scaleId.trim() !== ''
+    ? project.scaleId.trim().slice(0, 32)
+    : undefined
+
   return {
     version: 1,
     id: ID_PATTERN.test(project.id) ? project.id : createProjectId(),
@@ -219,6 +229,8 @@ export function sanitizeProject(project: Project): Project {
     beatsPerBar: BEATS_PER_BAR,
     bars,
     loop: Boolean(project.loop),
+    ...(scaleRoot !== undefined ? { scaleRoot } : {}),
+    ...(scaleId !== undefined ? { scaleId } : {}),
     tracks: tracks.length > 0 ? tracks : createDefaultProject().tracks,
   }
 }
@@ -227,6 +239,78 @@ export function sanitizeProject(project: Project): Project {
  * Toggle a sixteenth-note cell. An overlapping note of the same pitch is removed;
  * otherwise a new sixteenth is added until the per-track cap.
  */
+/**
+ * Read an untrusted document (an imported file) as a project. Fields of the
+ * wrong type fall back to defaults and everything is clamped into range.
+ * Null when the value is not recognisably a project.
+ */
+export function coerceProject(value: unknown): Project | null {
+  if (typeof value !== 'object' || value === null) return null
+  const raw = value as Record<string, unknown>
+  if (!Array.isArray(raw.tracks) || raw.tracks.length === 0) return null
+  const text = (input: unknown, fallback: string): string => typeof input === 'string' ? input : fallback
+  const num = (input: unknown, fallback: number): number =>
+    typeof input === 'number' && Number.isFinite(input) ? input : fallback
+
+  const tracks: Track[] = []
+  for (const item of raw.tracks) {
+    if (typeof item !== 'object' || item === null) continue
+    const entry = item as Record<string, unknown>
+    const notes: Note[] = []
+    for (const candidate of Array.isArray(entry.notes) ? entry.notes : []) {
+      if (typeof candidate !== 'object' || candidate === null) continue
+      const note = candidate as Record<string, unknown>
+      if (typeof note.pitch !== 'number' || typeof note.startBeat !== 'number') continue
+      notes.push({
+        pitch: num(note.pitch, 60),
+        startBeat: num(note.startBeat, 0),
+        durationBeats: num(note.durationBeats, STEP_BEATS),
+        velocity: num(note.velocity, 100),
+      })
+    }
+    const synth = coerceSynthPatch(entry.synth)
+    tracks.push({
+      id: text(entry.id, ''),
+      name: text(entry.name, ''),
+      instrumentId: text(entry.instrumentId, 'lead'),
+      mute: entry.mute === true,
+      gain: num(entry.gain, 0.8),
+      ...(synth !== null ? { synth } : {}),
+      notes,
+    })
+  }
+  if (tracks.length === 0) return null
+
+  return sanitizeProject({
+    version: 1,
+    id: createProjectId(),
+    name: text(raw.name, ''),
+    bpm: num(raw.bpm, 120),
+    beatsPerBar: BEATS_PER_BAR,
+    bars: num(raw.bars, 4),
+    loop: raw.loop !== false,
+    ...(typeof raw.scaleRoot === 'number' ? { scaleRoot: raw.scaleRoot } : {}),
+    ...(typeof raw.scaleId === 'string' ? { scaleId: raw.scaleId } : {}),
+    tracks,
+  })
+}
+
+/** `base`, or `base 2`, `base 3`… so that no two projects in the list share a name. */
+export function uniqueName(base: string, taken: readonly string[]): string {
+  const used = new Set(taken)
+  const root = base.trim() || '未命名'
+  if (!used.has(root)) return root
+  // A trailing number is our own counter only if the name without it is taken too
+  // ("夜曲 2" next to "夜曲"), not when it is part of the title ("Synthwave 84").
+  const bare = root.replace(/ \d+$/, '')
+  const stem = bare !== root && used.has(bare) ? bare : root
+  for (let index = 2; index < 1000; index += 1) {
+    const candidate = `${stem} ${index}`.slice(0, 80)
+    if (!used.has(candidate)) return candidate
+  }
+  return root
+}
+
 export function toggleCell(notes: readonly Note[], pitch: number, startBeat: number): Note[] {
   const end = startBeat + STEP_BEATS
   const hit = (note: Note): boolean => note.pitch === pitch

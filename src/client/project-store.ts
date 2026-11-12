@@ -1,12 +1,14 @@
 /** In-memory project shared by the editor page and the sidebar transport. */
 import {
   clipToBars,
+  coerceProject,
   createDefaultProject,
   createProjectId,
   MAX_TRACKS,
   removeNoteAt,
   sanitizeProject,
   toggleCell,
+  uniqueName,
   upsertNote,
   type Note,
   type Project,
@@ -14,6 +16,13 @@ import {
   type Track,
 } from '../model.ts'
 import { deleteProject, listProjects, readProject, saveProject, type ProjectSummary } from './api.ts'
+import {
+  clearViewState,
+  getLastProjectId,
+  loadViewState,
+  saveViewState,
+  setLastProjectId,
+} from './local-state.ts'
 import { DEFAULT_SYNTH_PATCHES, resolveSynthPatch } from './instruments.ts'
 import { createStarterProject, generateRandomGrooveProject, SONG_PRESETS, type SynthPresetItem } from './presets.ts'
 
@@ -33,6 +42,10 @@ export interface SessionState {
   showGhostNotes: boolean
   showOnboarding: boolean
   saving: boolean
+  /** The last save did not reach the Host; the edits exist only in this page. */
+  saveFailed: boolean
+  /** A project deleted moments ago that `restoreDeleted` can bring back. */
+  lastDeleted: { id: string; name: string } | null
   canUndo: boolean
   error: string | null
 }
@@ -41,11 +54,22 @@ export interface SessionState {
 const UNDO_COALESCE_MS = 400
 const UNDO_LIMIT = 50
 
+const DEFAULT_SCALE_ROOT = 9
+const DEFAULT_SCALE_ID = 'minor'
+
 const INSTRUMENT_CYCLE = ['lead', 'bass', 'pad', 'keys', 'acid', 'pluck', 'chip', 'bell', 'drums'] as const
 
 function summaryOf(project: Project, previous: readonly ProjectSummary[]): ProjectSummary[] {
   const next = previous.filter((item) => item.id !== project.id)
-  next.unshift({ id: project.id, name: project.name, updatedAt: new Date().toISOString() })
+  next.unshift({
+    id: project.id,
+    name: project.name,
+    updatedAt: new Date().toISOString(),
+    bpm: project.bpm,
+    bars: project.bars,
+    tracks: project.tracks.length,
+    notes: project.tracks.reduce((total, track) => total + track.notes.length, 0),
+  })
   return next
 }
 
@@ -60,6 +84,7 @@ export class ProjectClient {
   private lastCommitKey: string | undefined
   /** True while the open project is an untouched preset or new project, so replacing it loses nothing. */
   private pristine = false
+  private deleted: { project: Project; wasOpen: boolean } | undefined
 
   constructor() {
     const project = createStarterProject('draft')
@@ -72,12 +97,14 @@ export class ProjectClient {
       muted: false,
       recordArm: false,
       selectedTrackId: project.tracks[0]?.id ?? '',
-      scaleRoot: 9,
-      scaleId: 'minor',
+      scaleRoot: DEFAULT_SCALE_ROOT,
+      scaleId: DEFAULT_SCALE_ID,
       octaveOffset: 0,
       showGhostNotes: true,
       showOnboarding: false,
       saving: false,
+      saveFailed: false,
+      lastDeleted: null,
       canUndo: false,
       error: null,
     }
@@ -90,7 +117,10 @@ export class ProjectClient {
     return () => { this.listeners.delete(listener) }
   }
 
-  /** Load the most recent project. A failed load can be retried by calling this again. */
+  /**
+   * Load the project that was open last, or the most recently modified one.
+   * A failed load can be retried by calling this again.
+   */
   async hydrate(): Promise<void> {
     if (this.hydrated) return
     this.hydrated = true
@@ -105,7 +135,9 @@ export class ProjectClient {
         this.replaceProject(created, summaryOf(created, []), false, true)
         return
       }
-      const current = await readProject(projects[0]?.id ?? '')
+      const last = getLastProjectId()
+      const target = projects.find((item) => item.id === last) ?? projects[0]
+      const current = await readProject(target?.id ?? '')
       this.replaceProject(current, projects, false)
     } catch (error) {
       this.hydrated = false
@@ -186,17 +218,19 @@ export class ProjectClient {
     if (!this.state.project.tracks.some((track) => track.id === trackId)) return
     this.state = { ...this.state, selectedTrackId: trackId }
     this.emit()
+    this.rememberView()
   }
 
+  /** The scale belongs to the project, so it is saved with it and can be undone. */
   setScale(scaleRoot: number, scaleId: string): void {
-    this.state = { ...this.state, scaleRoot, scaleId }
-    this.emit()
+    this.commit({ ...this.state.project, scaleRoot, scaleId })
   }
 
   setOctaveOffset(octaveOffset: number): void {
     const clamped = Math.max(-2, Math.min(2, octaveOffset))
     this.state = { ...this.state, octaveOffset: clamped }
     this.emit()
+    this.rememberView()
   }
 
   setRecordArm(recordArm: boolean): void {
@@ -207,6 +241,7 @@ export class ProjectClient {
   setShowGhostNotes(showGhostNotes: boolean): void {
     this.state = { ...this.state, showGhostNotes }
     this.emit()
+    this.rememberView()
   }
 
   setShowOnboarding(showOnboarding: boolean): void {
@@ -296,21 +331,74 @@ export class ProjectClient {
   async newProject(blank = false): Promise<void> {
     await this.flush()
     const base = blank ? createDefaultProject(createProjectId()) : createStarterProject(createProjectId())
-    const created = await saveProject(base)
+    const created = await saveProject({ ...base, name: uniqueName(base.name, this.names()) })
     this.replaceProject(created, summaryOf(created, this.state.projects), false, true)
   }
 
   async selectProject(id: string): Promise<void> {
+    if (id === this.state.project.id) return
     await this.flush()
     const project = await readProject(id)
     this.replaceProject(project, this.state.projects, false)
   }
 
-  async removeProject(): Promise<void> {
-    const id = this.state.project.id
+  /** Copy a project under a new id and name, and open the copy. */
+  async duplicateProject(id: string): Promise<void> {
+    const source = await this.exportProject(id)
+    const copy = await saveProject({
+      ...source,
+      id: createProjectId(),
+      name: uniqueName(`${source.name} 副本`, this.names()),
+    })
+    this.replaceProject(copy, summaryOf(copy, this.state.projects), false)
+  }
+
+  async renameProject(id: string, name: string): Promise<void> {
+    const trimmed = name.trim().slice(0, 80)
+    if (trimmed === '') return
+    if (id === this.state.project.id) {
+      this.rename(trimmed)
+      return
+    }
+    const saved = await saveProject({ ...(await readProject(id)), name: trimmed })
+    const position = this.state.projects.findIndex((item) => item.id === id)
+    const projects = summaryOf(saved, this.state.projects)
+    // Renaming is not a content edit; keep the row where the user is looking at it.
+    const [moved] = projects.splice(0, 1)
+    if (moved !== undefined) projects.splice(Math.max(0, position), 0, moved)
+    this.state = { ...this.state, projects }
+    this.emit()
+  }
+
+  /** The full document of a project, with any pending edit saved first. */
+  async exportProject(id: string): Promise<Project> {
+    if (id !== this.state.project.id) return readProject(id)
     await this.flush()
+    return this.state.project
+  }
+
+  /** Add a project from an exported file. It always gets a new id, so nothing is overwritten. */
+  async importProject(raw: unknown): Promise<void> {
+    const project = coerceProject(raw)
+    if (project === null) throw new Error('invalid_import')
+    await this.flush()
+    const created = await saveProject({ ...project, name: uniqueName(project.name, this.names()) })
+    this.replaceProject(created, summaryOf(created, this.state.projects), false)
+  }
+
+  /** Delete a project. Until `dismissDeleted`, `restoreDeleted` can bring it back. */
+  async removeProject(id: string = this.state.project.id): Promise<void> {
+    const wasOpen = id === this.state.project.id
+    const doomed = await this.exportProject(id)
     await deleteProject(id)
+    clearViewState(id)
+    this.deleted = { project: doomed, wasOpen }
     const projects = this.state.projects.filter((item) => item.id !== id)
+    this.state = { ...this.state, projects, lastDeleted: { id, name: doomed.name } }
+    if (!wasOpen) {
+      this.emit()
+      return
+    }
     if (projects.length === 0) {
       const created = await saveProject(createStarterProject(createProjectId()))
       this.replaceProject(created, summaryOf(created, []), false, true)
@@ -318,6 +406,29 @@ export class ProjectClient {
     }
     const next = await readProject(projects[0]?.id ?? '')
     this.replaceProject(next, projects, false)
+  }
+
+  async restoreDeleted(): Promise<void> {
+    const entry = this.deleted
+    if (entry === undefined) return
+    await this.flush()
+    const saved = await saveProject(entry.project)
+    this.deleted = undefined
+    this.state = { ...this.state, lastDeleted: null }
+    if (entry.wasOpen) {
+      this.replaceProject(saved, summaryOf(saved, this.state.projects), false)
+      return
+    }
+    // It was not the open project when deleted, so put it back without switching.
+    this.state = { ...this.state, projects: summaryOf(saved, this.state.projects) }
+    this.emit()
+  }
+
+  dismissDeleted(): void {
+    this.deleted = undefined
+    if (this.state.lastDeleted === null) return
+    this.state = { ...this.state, lastDeleted: null }
+    this.emit()
   }
 
   setPlaying(playing: boolean): void {
@@ -335,7 +446,8 @@ export class ProjectClient {
     this.emit()
   }
 
-  async flush(): Promise<void> {
+  /** Save now instead of waiting for the debounce. `keepalive` is for a page that is going away. */
+  async flush(options: { keepalive?: boolean } = {}): Promise<void> {
     if (!this.state.ready) return
     if (this.timer !== undefined) clearTimeout(this.timer)
     this.timer = undefined
@@ -344,8 +456,9 @@ export class ProjectClient {
     this.state = { ...this.state, saving: true }
     this.emit()
     try {
-      const saved = await saveProject(project)
+      const saved = await saveProject(project, options)
       if (this.revision !== revision) {
+        this.state = { ...this.state, saveFailed: false }
         this.scheduleSave()
         return
       }
@@ -354,13 +467,38 @@ export class ProjectClient {
         project: saved,
         projects: summaryOf(saved, this.state.projects),
         saving: false,
+        saveFailed: false,
         error: null,
       }
       this.emit()
     } catch (error) {
-      this.state = { ...this.state, saving: false, error: error instanceof Error ? error.message : 'save_failed' }
+      this.state = {
+        ...this.state,
+        saving: false,
+        saveFailed: true,
+        error: error instanceof Error ? error.message : 'save_failed',
+      }
       this.emit()
     }
+  }
+
+  /** Called when the page is hidden or closing: push out an edit still waiting on the debounce. */
+  flushPending(): void {
+    if (this.timer === undefined && !this.state.saveFailed) return
+    void this.flush({ keepalive: true })
+  }
+
+  private names(): string[] {
+    return this.state.projects.map((item) => item.name)
+  }
+
+  private rememberView(): void {
+    if (!this.state.ready) return
+    saveViewState(this.state.project.id, {
+      selectedTrackId: this.state.selectedTrackId,
+      octaveOffset: this.state.octaveOffset,
+      showGhostNotes: this.state.showGhostNotes,
+    })
   }
 
   private mapTrack(trackId: string, map: (track: Track) => Track, coalesceKey?: string): void {
@@ -376,7 +514,9 @@ export class ProjectClient {
    */
   private async openPreset(build: (id: string) => Project): Promise<void> {
     if (this.pristine) {
-      const next = sanitizeProject(build(this.state.project.id))
+      const built = build(this.state.project.id)
+      const others = this.state.projects.filter((item) => item.id !== built.id).map((item) => item.name)
+      const next = sanitizeProject({ ...built, name: uniqueName(built.name, others) })
       this.revision += 1
       this.history = []
       this.state = {
@@ -394,7 +534,8 @@ export class ProjectClient {
       return
     }
     await this.flush()
-    const created = await saveProject(build(createProjectId()))
+    const built = build(createProjectId())
+    const created = await saveProject({ ...built, name: uniqueName(built.name, this.names()) })
     this.replaceProject(created, summaryOf(created, this.state.projects), false, true)
   }
 
@@ -422,6 +563,8 @@ export class ProjectClient {
 
   private replaceProject(project: Project, projects: ProjectSummary[], save: boolean, pristine = false): void {
     const sanitized = sanitizeProject(project)
+    const view = loadViewState(sanitized.id)
+    setLastProjectId(sanitized.id)
     this.revision += 1
     this.history = []
     this.lastCommitAt = 0
@@ -431,9 +574,12 @@ export class ProjectClient {
       ready: true,
       project: sanitized,
       projects: projects.some((item) => item.id === sanitized.id) ? projects : summaryOf(sanitized, projects),
-      selectedTrackId: sanitized.tracks.some((track) => track.id === this.state.selectedTrackId)
-        ? this.state.selectedTrackId
+      selectedTrackId: sanitized.tracks.some((track) => track.id === view.selectedTrackId)
+        ? view.selectedTrackId ?? ''
         : sanitized.tracks[0]?.id ?? '',
+      octaveOffset: view.octaveOffset ?? 0,
+      showGhostNotes: view.showGhostNotes ?? true,
+      saveFailed: false,
       canUndo: false,
       error: null,
     }
@@ -449,6 +595,12 @@ export class ProjectClient {
   }
 
   private emit(): void {
+    // The scale lives in the project; mirror it so views read one flat state.
+    const scaleRoot = this.state.project.scaleRoot ?? DEFAULT_SCALE_ROOT
+    const scaleId = this.state.project.scaleId ?? DEFAULT_SCALE_ID
+    if (scaleRoot !== this.state.scaleRoot || scaleId !== this.state.scaleId) {
+      this.state = { ...this.state, scaleRoot, scaleId }
+    }
     for (const listener of this.listeners) listener()
   }
 }

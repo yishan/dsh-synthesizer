@@ -41,7 +41,7 @@ const CSS = `
 }
 
 /* Page skeleton: top bar, then tracks beside the editor. Only the grid scrolls. */
-.dsyn-page { height: 100%; min-height: 0; display: flex; flex-direction: column; isolation: isolate; }
+.dsyn-page { position: relative; height: 100%; min-height: 0; display: flex; flex-direction: column; isolation: isolate; }
 .dsyn-top {
   display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap;
   gap: 8px 16px; padding: 8px 12px; border-bottom: 1px solid var(--s-line);
@@ -149,6 +149,32 @@ const CSS = `
 .dsyn-help dl { display: grid; grid-template-columns: auto 1fr; gap: 6px 12px; margin: 0; align-items: baseline; }
 .dsyn-help dt { white-space: nowrap; }
 .dsyn-help dd { margin: 0; }
+
+/* Project panel under the project name */
+.dsyn-project-button { max-width: 260px; font-weight: 600; font-size: 13px; }
+.dsyn-project-button > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dsyn-menu.is-panel { width: 380px; padding: 6px; }
+.dsyn-projects { display: flex; flex-direction: column; }
+.dsyn-project-list { max-height: 312px; overflow-y: auto; display: flex; flex-direction: column; gap: 1px; }
+.dsyn-project { display: flex; align-items: center; gap: 4px; padding-right: 4px; border-radius: 8px; min-height: 44px; }
+.dsyn-project:hover, .dsyn-project:focus-within { background: var(--s-hover); }
+.dsyn-project.is-current { background: var(--s-active); }
+.dsyn-project-main {
+  flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; padding: 6px 8px;
+  border: 0; background: transparent; color: var(--s-fg); font: inherit; text-align: left; cursor: pointer;
+}
+.dsyn-project-name { font-size: 13px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dsyn-project-meta { font-size: 11px; color: var(--s-fg3); font-variant-numeric: tabular-nums; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dsyn-project-actions { display: flex; gap: 0; opacity: 0; }
+.dsyn-project:hover .dsyn-project-actions, .dsyn-project:focus-within .dsyn-project-actions { opacity: 1; }
+.dsyn-project-new { display: flex; flex-wrap: wrap; gap: 4px; padding: 2px 4px 6px; }
+
+.dsyn-toast {
+  position: absolute; left: 50%; bottom: 20px; transform: translateX(-50%); z-index: 30;
+  display: flex; align-items: center; gap: 8px; padding: 6px 6px 6px 14px; border-radius: 10px;
+  border: 1px solid var(--s-line); background: var(--dsw-alias-bg-layer-3, var(--s-bg));
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.16); font-size: 12px; white-space: nowrap;
+}
 
 .dsyn-alert {
   display: flex; align-items: center; justify-content: space-between; gap: 12px;

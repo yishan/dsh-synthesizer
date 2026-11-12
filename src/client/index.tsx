@@ -51,7 +51,21 @@ export function apply(ctx: ClientContext): void {
   const store = getProjectStore()
   const engine = getEngine()
   void store.hydrate()
-  if (typeof ctx.on === 'function') ctx.on('dispose', () => { engine.dispose() })
+  // The save is debounced; do not let a hidden or closing page take the last edit with it.
+  const onHide = (): void => {
+    if (document.visibilityState === 'hidden') store.flushPending()
+  }
+  const onPageHide = (): void => { store.flushPending() }
+  document.addEventListener('visibilitychange', onHide)
+  window.addEventListener('pagehide', onPageHide)
+  if (typeof ctx.on === 'function') {
+    ctx.on('dispose', () => {
+      document.removeEventListener('visibilitychange', onHide)
+      window.removeEventListener('pagehide', onPageHide)
+      store.flushPending()
+      engine.dispose()
+    })
+  }
   if (slots === undefined) {
     console.error('[dsh-synthesizer] client mounted without the slots service')
     return

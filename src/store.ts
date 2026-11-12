@@ -23,6 +23,10 @@ export interface ProjectSummary {
   id: string
   name: string
   updatedAt: string
+  bpm: number
+  bars: number
+  tracks: number
+  notes: number
 }
 
 export interface StoreLimits {
@@ -47,13 +51,22 @@ export class ProjectStore {
       try {
         const project = projectSchema.parse(JSON.parse(readFileSync(path, 'utf8')) as unknown)
         const mtime = statSync(path).mtimeMs
-        summaries.push({ id: project.id, name: project.name, updatedAt: new Date(mtime).toISOString(), mtime })
+        summaries.push({
+          id: project.id,
+          name: project.name,
+          updatedAt: new Date(mtime).toISOString(),
+          bpm: project.bpm,
+          bars: project.bars,
+          tracks: project.tracks.length,
+          notes: project.tracks.reduce((total, track) => total + track.notes.length, 0),
+          mtime,
+        })
       } catch {
         // A corrupt file stays on disk but does not block the rest of the list.
       }
     }
     summaries.sort((a, b) => b.mtime - a.mtime)
-    return summaries.map(({ id, name, updatedAt }) => ({ id, name, updatedAt }))
+    return summaries.map(({ mtime: _mtime, ...summary }) => summary)
   }
 
   read(id: string): Project {

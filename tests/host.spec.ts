@@ -76,8 +76,9 @@ describe('Host half', () => {
     expect(savedBody.project.id).toBe('sketch')
 
     const listed = await projects.fetch(new Request('http://127.0.0.1/api/dsh-synthesizer/projects'))
-    const listedBody = await listed.json() as { projects: Array<{ id: string }> }
+    const listedBody = await listed.json() as { projects: Array<{ id: string; bpm: number; bars: number; tracks: number; notes: number }> }
     expect(listedBody.projects.map((item) => item.id)).toEqual(['sketch'])
+    expect(listedBody.projects[0]).toMatchObject({ bpm: 120, bars: 4, tracks: 4, notes: 0 })
 
     const read = await projects.fetch(new Request('http://127.0.0.1/api/dsh-synthesizer/projects?id=sketch'))
     expect((await read.json() as { project: { bpm: number } }).project.bpm).toBe(120)

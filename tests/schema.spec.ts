@@ -3,11 +3,13 @@ import {
   MAX_NOTES_PER_TRACK,
   MAX_TRACKS,
   clipToBars,
+  coerceProject,
   createDefaultProject,
   projectSchema,
   removeNoteAt,
   sanitizeProject,
   toggleCell,
+  uniqueName,
   upsertNote,
 } from '../src/schema.ts'
 import { SONG_PRESETS, generateRandomGrooveProject } from '../src/client/presets.ts'
@@ -111,5 +113,40 @@ describe('project schema', () => {
     const cleaned = sanitizeProject(dirty)
     expect(projectSchema.safeParse(cleaned).success).toBe(true)
     expect(cleaned.bpm).toBe(240)
+  })
+
+  it('reads an untrusted file as a project, or refuses it', () => {
+    expect(coerceProject(null)).toBeNull()
+    expect(coerceProject({ name: 'x', tracks: [] })).toBeNull()
+    expect(coerceProject({ tracks: ['nope'] })).toBeNull()
+
+    const loose = coerceProject({
+      name: 42,
+      bpm: 9000,
+      bars: 'four',
+      scaleRoot: 14,
+      tracks: [{
+        id: '../etc',
+        instrumentId: 'lead',
+        gain: 5,
+        synth: { waveform: 'banana' },
+        notes: [{ pitch: 60, startBeat: 0.1, durationBeats: 999 }, { pitch: 'C4' }, null],
+      }],
+      extra: 'ignored',
+    })
+    expect(loose).not.toBeNull()
+    expect(projectSchema.safeParse(loose).success).toBe(true)
+    expect(loose?.bpm).toBe(240)
+    expect(loose?.bars).toBe(4)
+    expect(loose?.scaleRoot).toBe(2)
+    expect(loose?.tracks[0]?.notes).toHaveLength(1)
+    expect(loose?.tracks[0]?.synth).toBeUndefined()
+  })
+
+  it('numbers a name that is already taken', () => {
+    expect(uniqueName('夜曲', [])).toBe('夜曲')
+    expect(uniqueName('夜曲', ['夜曲'])).toBe('夜曲 2')
+    expect(uniqueName('夜曲 2', ['夜曲', '夜曲 2'])).toBe('夜曲 3')
+    expect(uniqueName('  ', ['未命名'])).toBe('未命名 2')
   })
 })

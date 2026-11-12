@@ -5,6 +5,10 @@ export interface ProjectSummary {
   id: string
   name: string
   updatedAt: string
+  bpm?: number
+  bars?: number
+  tracks?: number
+  notes?: number
 }
 
 interface ListBody {
@@ -71,12 +75,18 @@ function mergeSynthPatches(project: Project, patches: Map<string, SynthPatch>): 
 }
 
 /**
- * Wire payload without `synth`, for a Host still running the first v1 schema
- * whose strict track object rejects the field.
+ * Wire payload for a Host still running an older schema, whose strict objects
+ * reject the fields added since: per-track `synth` and the project scale.
  */
-function withoutSynth(project: Project): Project {
+function legacyWire(project: Project): Project {
   return {
-    ...project,
+    version: 1,
+    id: project.id,
+    name: project.name,
+    bpm: project.bpm,
+    beatsPerBar: project.beatsPerBar,
+    bars: project.bars,
+    loop: project.loop,
     tracks: project.tracks.map((track) => ({
       id: track.id,
       name: track.name,
@@ -88,12 +98,17 @@ function withoutSynth(project: Project): Project {
   }
 }
 
-async function postProject(project: Project): Promise<Project> {
+/** A request the browser may finish after the page is gone has a small body budget. */
+const KEEPALIVE_MAX_BYTES = 60_000
+
+async function postProject(project: Project, keepalive: boolean): Promise<Project> {
+  const payload = JSON.stringify(project)
   const body = await readBody<ProjectBody>(await fetch('/api/dsh-synthesizer/projects', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify(project),
+    body: payload,
     cache: 'no-store',
+    ...(keepalive && payload.length < KEEPALIVE_MAX_BYTES ? { keepalive: true } : {}),
   }))
   if (body.project === undefined) throw new Error('invalid_project')
   return body.project
@@ -129,15 +144,30 @@ export async function readProject(id: string): Promise<Project> {
  * The browser copy of the patches is only a fallback: it is used when an older
  * Host rejects `synth`, and to recover patches saved before the Host stored them.
  */
-export async function saveProject(project: Project): Promise<Project> {
+/**
+ * Save the whole project to the profile. `keepalive` asks the browser to
+ * finish the request even if the page is closing.
+ * The browser copy of the synth patches is only a fallback: it is used when an
+ * older Host rejects the newer fields, and to recover patches saved before the
+ * Host stored them.
+ */
+export async function saveProject(project: Project, options: { keepalive?: boolean } = {}): Promise<Project> {
   const clean = sanitizeProject(project)
   const patches = saveLocalSynthPatches(clean)
+  const keepalive = options.keepalive === true
   try {
-    return await postProject(clean)
+    return await postProject(clean, keepalive)
   } catch (error) {
-    const hasSynth = clean.tracks.some((track) => track.synth !== undefined)
-    if (!hasSynth || !(error instanceof Error) || error.message !== 'invalid_project') throw error
-    return mergeSynthPatches(await postProject(withoutSynth(clean)), patches)
+    const hasNewFields = clean.scaleRoot !== undefined
+      || clean.scaleId !== undefined
+      || clean.tracks.some((track) => track.synth !== undefined)
+    if (!hasNewFields || !(error instanceof Error) || error.message !== 'invalid_project') throw error
+    const saved = mergeSynthPatches(await postProject(legacyWire(clean), keepalive), patches)
+    return {
+      ...saved,
+      ...(clean.scaleRoot !== undefined ? { scaleRoot: clean.scaleRoot } : {}),
+      ...(clean.scaleId !== undefined ? { scaleId: clean.scaleId } : {}),
+    }
   }
 }
 

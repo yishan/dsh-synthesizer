@@ -5,6 +5,7 @@ import { DRUM_LABELS, resolveSynthPatch } from './instruments.ts'
 import { SYNTH_PATCH_PRESETS } from './presets.ts'
 import { Icon } from './icons.tsx'
 import { getProjectStore } from './project-store.ts'
+import { rangeFill } from './styles.ts'
 
 const WAVEFORMS: ReadonlyArray<{ id: SynthWaveform; label: string }> = [
   { id: 'sawtooth', label: '锯齿' },
@@ -243,7 +244,7 @@ function Param({
         value={value}
         onChange={(event) => { onChange(Number(event.target.value)) }}
         className="dsyn-range"
-        style={{ width: '100%' }}
+        style={{ width: '100%', ...rangeFill(value, min, max) }}
       />
     </label>
   )

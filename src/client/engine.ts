@@ -133,7 +133,8 @@ export class Engine {
         instrumentId,
         pitch,
         velocity: 105,
-        gain: 0.82,
+        // Audition at the track's own level, so a quiet track previews quietly.
+        gain: selectedTrack?.gain ?? 0.82,
         synth: effectiveSynth,
         time: audio.currentTime,
         stopTime: audio.currentTime + 8,

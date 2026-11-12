@@ -144,4 +144,21 @@ describe('instruments', () => {
     expect(auditionPitch('KeyO', auditionBase('drums'))).toBe(49)
     expect(auditionPitch('Space', 60)).toBeNull()
   })
+
+  it('lets a held note be released before its planned stop, but never extended', () => {
+    const chip = fakeContext()
+    const patch = DEFAULT_SYNTH_PATCHES.chip
+    if (patch === undefined) throw new Error('chip patch missing')
+    const voice = getInstrument('chip').noteOn(chip.ctx, {} as AudioNode, 0, 60, 100, patch)
+    const envelope = chip.created.find((node) => node.kind === 'gain')?.gain.values ?? []
+    const silentAt = (): number | undefined => envelope.filter((entry) => entry.method === 'linear' && entry.value === 0).at(-1)?.time
+
+    voice.stop(8)
+    expect(silentAt()).toBeCloseTo(8 + patch.release)
+    voice.stop(1)
+    expect(silentAt()).toBeCloseTo(1 + patch.release)
+    const scheduled = envelope.length
+    voice.stop(5)
+    expect(envelope).toHaveLength(scheduled)
+  })
 })

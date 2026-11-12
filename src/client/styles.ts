@@ -91,7 +91,32 @@ const CSS = `
 .dsyn-field.is-quiet { border-color: transparent; }
 .dsyn-field.is-quiet:hover, .dsyn-field.is-quiet:focus { background: var(--s-hover); }
 .dsyn-field.is-number { font-variant-numeric: tabular-nums; }
-.dsyn-range { flex: 1; min-width: 0; margin: 0; height: 16px; accent-color: var(--s-fg); cursor: pointer; }
+/* Slider: a hairline and a small dot at rest; both grow on hover, focus, or drag.
+   The 16px box is the hit area throughout. --fill is set inline from the value. */
+.dsyn-range {
+  -webkit-appearance: none; appearance: none; flex: 1; min-width: 0; margin: 0; height: 16px;
+  background: transparent; cursor: pointer; --fill: 50%;
+}
+.dsyn-range::-webkit-slider-runnable-track {
+  height: 2px; border-radius: 2px;
+  background: linear-gradient(to right, var(--s-fg2) var(--fill), var(--s-line-strong) var(--fill));
+  transition: height 120ms ease-out;
+}
+.dsyn-range::-webkit-slider-thumb {
+  -webkit-appearance: none; width: 8px; height: 8px; margin-top: -3px; border-radius: 50%;
+  background: var(--s-fg); border: 0;
+  transition: width 120ms ease-out, height 120ms ease-out, margin-top 120ms ease-out;
+}
+.dsyn-range:hover::-webkit-slider-runnable-track,
+.dsyn-range:active::-webkit-slider-runnable-track,
+.dsyn-range:focus-visible::-webkit-slider-runnable-track,
+.dsyn-param:hover .dsyn-range::-webkit-slider-runnable-track { height: 4px; }
+.dsyn-range:hover::-webkit-slider-thumb,
+.dsyn-range:active::-webkit-slider-thumb,
+.dsyn-range:focus-visible::-webkit-slider-thumb,
+.dsyn-param:hover .dsyn-range::-webkit-slider-thumb { width: 14px; height: 14px; margin-top: -5px; }
+.dsyn-range:focus-visible { outline: none; }
+.dsyn-range:focus-visible::-webkit-slider-thumb { box-shadow: 0 0 0 2px var(--s-bg), 0 0 0 4px var(--s-fg); }
 .dsyn-readout {
   font: 500 12px/1 var(--s-mono); font-variant-numeric: tabular-nums;
   color: var(--s-fg2); padding: 0 6px; min-width: 34px; text-align: center;
@@ -259,6 +284,12 @@ export const TRACK_COLORS: Record<string, string> = {
   pluck: '#3b98ad',
   chip: '#bf5f98',
   bell: '#3fa197',
+}
+
+/** Inline style that paints the filled part of a `.dsyn-range` up to its value. */
+export function rangeFill(value: number, min: number, max: number): Record<string, string> {
+  const ratio = max > min ? (value - min) / (max - min) : 0
+  return { '--fill': `${Math.round(Math.max(0, Math.min(1, ratio)) * 1000) / 10}%` }
 }
 
 export function trackColor(instrumentId: string): string {

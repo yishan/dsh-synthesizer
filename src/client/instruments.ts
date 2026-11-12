@@ -329,13 +329,15 @@ function tone(
   }
 
   gain.connect(out)
-  let stopped = false
+  let scheduledStop: number | undefined
 
   return {
+    // A voice gets its planned stop time as soon as it starts. A later call may
+    // only move the stop earlier (a held preview key being released).
     stop(stopTime: number) {
-      if (stopped) return
-      stopped = true
       const at = Math.max(stopTime, time + 0.004)
+      if (scheduledStop !== undefined && at >= scheduledStop) return
+      scheduledStop = at
       const elapsed = at - time
       let levelAtStop = sustainLevel
       if (elapsed < options.attack) {

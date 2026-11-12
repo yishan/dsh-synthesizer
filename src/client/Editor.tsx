@@ -6,7 +6,7 @@ import { INSTRUMENT_LABELS, listInstruments } from './instruments.ts'
 import { PianoRoll } from './PianoRoll.tsx'
 import { SONG_PRESETS } from './presets.ts'
 import { getProjectStore } from './project-store.ts'
-import { ensureStyles, trackColor } from './styles.ts'
+import { ensureStyles, rangeFill, trackColor } from './styles.ts'
 import { Transport } from './Transport.tsx'
 import { useProject } from './use-project.ts'
 
@@ -302,6 +302,7 @@ export function Editor(): JSX.Element {
                     value={track.gain}
                     onChange={(event) => { store.updateTrack(track.id, { gain: Number(event.target.value) }) }}
                     className="dsyn-range"
+                    style={rangeFill(track.gain, 0, 1)}
                   />
                 </div>
               </div>

@@ -47,6 +47,26 @@ export const INSTRUMENT_LABELS: Record<string, string> = {
   drums: '鼓组 Drums',
 }
 
+/**
+ * What a track is called until the user names it: its role in the song, not
+ * its sound. The instrument and sound are already shown under the name.
+ */
+export const TRACK_NAMES: Record<string, string> = {
+  lead: '主旋律',
+  bass: '贝斯',
+  pad: '铺底',
+  keys: '键盘',
+  acid: '酸液',
+  pluck: '拨弦',
+  chip: '红白机',
+  bell: '铃音',
+  drums: '鼓',
+}
+
+export function defaultTrackName(instrumentId: string): string {
+  return TRACK_NAMES[instrumentId] ?? '音轨'
+}
+
 export const DRUM_LABELS: Record<number, { name: string; short: string; piece: DrumPiece; color: string }> = {
   [DRUM_CYMBAL]: { name: '吊镲 Crash', short: 'CR', piece: 'cymbal', color: '#f59e0b' },
   [DRUM_OPEN_HAT]: { name: '开镲 Open Hat', short: 'OH', piece: 'openHat', color: '#eab308' },

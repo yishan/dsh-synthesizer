@@ -299,4 +299,26 @@ describe('project client', () => {
     expect(old.saved.get(legacy.getState().project.id)?.tracks[0]?.kit).toBeUndefined()
     expect(legacy.getState().project.tracks.find((track) => track.id === legacyDrums.id)?.kit).toBe('lofi')
   })
+
+  it('names tracks by role and lets an automatic name follow the instrument', async () => {
+    installHost()
+    const client = new ProjectClient()
+    await client.newProject(true)
+    const names = (): string[] => client.getState().project.tracks.map((track) => track.name)
+    expect(names()).toEqual(['鼓', '贝斯', '键盘', '主旋律'])
+
+    client.addTrack()
+    const added = client.getState().project.tracks.at(-1)
+    if (added === undefined) throw new Error('track not added')
+    expect(added.name).toBe('酸液')
+
+    client.updateTrack(added.id, { instrumentId: 'bass' })
+    expect(names().at(-1)).toBe('贝斯 2')
+    client.updateTrack(added.id, { instrumentId: 'bell' })
+    expect(names().at(-1)).toBe('铃音')
+
+    client.updateTrack(added.id, { name: '我的铃' })
+    client.updateTrack(added.id, { instrumentId: 'pad' })
+    expect(names().at(-1)).toBe('我的铃')
+  })
 })

@@ -471,7 +471,7 @@ function buildSynthwaveProject(id = createProjectId()): Project {
     tracks: [
       {
         id: 'drums',
-        name: '复古鼓机 Drums',
+        name: '鼓',
         instrumentId: 'drums',
         mute: false,
         gain: 0.85,
@@ -479,7 +479,7 @@ function buildSynthwaveProject(id = createProjectId()): Project {
       },
       {
         id: 'bass',
-        name: '八度合成贝斯',
+        name: '贝斯',
         instrumentId: 'bass',
         mute: false,
         gain: 0.82,
@@ -497,7 +497,7 @@ function buildSynthwaveProject(id = createProjectId()): Project {
       },
       {
         id: 'keys',
-        name: 'Juno 霓虹铺底',
+        name: '铺底',
         instrumentId: 'pad',
         mute: false,
         gain: 0.68,
@@ -506,7 +506,7 @@ function buildSynthwaveProject(id = createProjectId()): Project {
       },
       {
         id: 'lead',
-        name: '星光琶音 Lead',
+        name: '琶音',
         instrumentId: 'lead',
         mute: false,
         gain: 0.72,
@@ -554,7 +554,7 @@ function buildLofiProject(id = createProjectId()): Project {
     tracks: [
       {
         id: 'drums',
-        name: 'Boom-Bap 鼓组',
+        name: '鼓',
         instrumentId: 'drums',
         mute: false,
         gain: 0.8,
@@ -562,7 +562,7 @@ function buildLofiProject(id = createProjectId()): Project {
       },
       {
         id: 'bass',
-        name: '暖调低音 Sub',
+        name: '贝斯',
         instrumentId: 'bass',
         mute: false,
         gain: 0.82,
@@ -580,7 +580,7 @@ function buildLofiProject(id = createProjectId()): Project {
       },
       {
         id: 'keys',
-        name: 'Rhodes 爵士电钢',
+        name: '和弦',
         instrumentId: 'keys',
         mute: false,
         gain: 0.74,
@@ -589,7 +589,7 @@ function buildLofiProject(id = createProjectId()): Project {
       },
       {
         id: 'lead',
-        name: '夜雨木管 Lead',
+        name: '主旋律',
         instrumentId: 'bell',
         mute: false,
         gain: 0.68,
@@ -633,7 +633,7 @@ function buildAcidProject(id = createProjectId()): Project {
     tracks: [
       {
         id: 'drums',
-        name: '909 仓库鼓机',
+        name: '鼓',
         instrumentId: 'drums',
         mute: false,
         gain: 0.88,
@@ -641,7 +641,7 @@ function buildAcidProject(id = createProjectId()): Project {
       },
       {
         id: 'bass',
-        name: 'TB-303 酸液走线',
+        name: '酸液',
         instrumentId: 'acid',
         mute: false,
         gain: 0.85,
@@ -650,7 +650,7 @@ function buildAcidProject(id = createProjectId()): Project {
       },
       {
         id: 'keys',
-        name: 'Rave 律动和弦',
+        name: '和弦',
         instrumentId: 'pluck',
         mute: false,
         gain: 0.66,
@@ -659,7 +659,7 @@ function buildAcidProject(id = createProjectId()): Project {
       },
       {
         id: 'lead',
-        name: '催眠琶音 Arp',
+        name: '琶音',
         instrumentId: 'lead',
         mute: false,
         gain: 0.65,
@@ -701,7 +701,7 @@ function buildChiptuneProject(id = createProjectId()): Project {
     tracks: [
       {
         id: 'drums',
-        name: '街机噪波鼓',
+        name: '鼓',
         instrumentId: 'drums',
         mute: false,
         gain: 0.78,
@@ -709,7 +709,7 @@ function buildChiptuneProject(id = createProjectId()): Project {
       },
       {
         id: 'bass',
-        name: '三角波快贝斯',
+        name: '贝斯',
         instrumentId: 'chip',
         mute: false,
         gain: 0.8,
@@ -723,7 +723,7 @@ function buildChiptuneProject(id = createProjectId()): Project {
       },
       {
         id: 'keys',
-        name: '快速芯片琶音',
+        name: '琶音',
         instrumentId: 'chip',
         mute: false,
         gain: 0.62,
@@ -732,7 +732,7 @@ function buildChiptuneProject(id = createProjectId()): Project {
       },
       {
         id: 'lead',
-        name: '勇者方波主音',
+        name: '主旋律',
         instrumentId: 'chip',
         mute: false,
         gain: 0.78,
@@ -768,7 +768,7 @@ function buildAmbientProject(id = createProjectId()): Project {
     tracks: [
       {
         id: 'drums',
-        name: '脉冲心跳鼓',
+        name: '鼓',
         instrumentId: 'drums',
         mute: false,
         gain: 0.65,
@@ -776,7 +776,7 @@ function buildAmbientProject(id = createProjectId()): Project {
       },
       {
         id: 'bass',
-        name: '深潜低频 Drone',
+        name: '贝斯',
         instrumentId: 'bass',
         mute: false,
         gain: 0.76,
@@ -792,7 +792,7 @@ function buildAmbientProject(id = createProjectId()): Project {
       },
       {
         id: 'keys',
-        name: '星云呼吸铺底',
+        name: '铺底',
         instrumentId: 'pad',
         mute: false,
         gain: 0.78,
@@ -809,7 +809,7 @@ function buildAmbientProject(id = createProjectId()): Project {
       },
       {
         id: 'lead',
-        name: '水晶漫反射 Bell',
+        name: '铃音',
         instrumentId: 'bell',
         mute: false,
         gain: 0.72,
@@ -835,13 +835,13 @@ function buildDiscoProject(id = createProjectId()): Project {
     scaleRoot: 9,
     scaleId: 'minor',
     tracks: [
-      { id: 'drums', name: '808 鼓组', instrumentId: 'drums', mute: false, gain: 0.85, kit: '808',
+      { id: 'drums', name: '鼓', instrumentId: 'drums', mute: false, gain: 0.85, kit: '808',
         notes: generateDrumPattern('disco', 4) },
-      { id: 'bass', name: '弹拨贝斯', instrumentId: 'bass', mute: false, gain: 0.84,
+      { id: 'bass', name: '贝斯', instrumentId: 'bass', mute: false, gain: 0.84,
         synth: presetPatch('bass-pluck'), notes: generateMelodicPattern('octaveBass', 4, 9, 'minor') },
-      { id: 'pad', name: '弦乐铺底', instrumentId: 'pad', mute: false, gain: 0.6,
+      { id: 'pad', name: '铺底', instrumentId: 'pad', mute: false, gain: 0.6,
         synth: presetPatch('pad-strings'), notes: generateMelodicPattern('chords', 4, 9, 'minor') },
-      { id: 'pluck', name: '闷音琶音', instrumentId: 'pluck', mute: false, gain: 0.66,
+      { id: 'pluck', name: '琶音', instrumentId: 'pluck', mute: false, gain: 0.66,
         synth: presetPatch('pluck-muted'), notes: generateMelodicPattern('arpUp', 4, 9, 'minor') },
     ],
   }
@@ -862,13 +862,13 @@ function buildTapeProject(id = createProjectId()): Project {
     scaleRoot: 2,
     scaleId: 'dorian',
     tracks: [
-      { id: 'drums', name: '磁带鼓组', instrumentId: 'drums', mute: false, gain: 0.8, kit: 'lofi',
+      { id: 'drums', name: '鼓', instrumentId: 'drums', mute: false, gain: 0.8, kit: 'lofi',
         notes: generateDrumPattern('lofi', 4) },
-      { id: 'bass', name: 'Sub 低频', instrumentId: 'bass', mute: false, gain: 0.82,
+      { id: 'bass', name: '贝斯', instrumentId: 'bass', mute: false, gain: 0.82,
         synth: presetPatch('bass-sub'), notes: generateMelodicPattern('octaveBass', 4, 2, 'dorian') },
-      { id: 'keys', name: '温暖电钢', instrumentId: 'keys', mute: false, gain: 0.66,
+      { id: 'keys', name: '和弦', instrumentId: 'keys', mute: false, gain: 0.66,
         synth: presetPatch('keys-warm'), notes: generateMelodicPattern('chords', 4, 2, 'dorian') },
-      { id: 'bell', name: '音乐盒', instrumentId: 'bell', mute: false, gain: 0.5,
+      { id: 'bell', name: '琶音', instrumentId: 'bell', mute: false, gain: 0.5,
         synth: presetPatch('bell-box'), notes: generateMelodicPattern('arpUp', 4, 2, 'dorian') },
     ],
   }
@@ -963,7 +963,7 @@ export function generateRandomGrooveProject(id = createProjectId()): Project {
     tracks: [
       {
         id: 'drums',
-        name: '律动鼓组',
+        name: '鼓',
         instrumentId: 'drums',
         mute: false,
         gain: 0.84,
@@ -971,7 +971,7 @@ export function generateRandomGrooveProject(id = createProjectId()): Project {
       },
       {
         id: 'bass',
-        name: bassInst === 'acid' ? '303 酸液贝斯' : '律动低音',
+        name: bassInst === 'acid' ? '酸液' : '贝斯',
         instrumentId: bassInst,
         mute: false,
         gain: 0.82,
@@ -980,7 +980,7 @@ export function generateRandomGrooveProject(id = createProjectId()): Project {
       },
       {
         id: 'keys',
-        name: '和弦铺底',
+        name: '和弦',
         instrumentId: 'pad',
         mute: false,
         gain: 0.68,
@@ -989,7 +989,7 @@ export function generateRandomGrooveProject(id = createProjectId()): Project {
       },
       {
         id: 'lead',
-        name: '灵感主音',
+        name: '主旋律',
         instrumentId: leadInst,
         mute: false,
         gain: 0.74,

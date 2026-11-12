@@ -129,7 +129,7 @@ export function createDefaultProject(id = createProjectId()): Project {
       { id: 'drums', name: '鼓', instrumentId: 'drums', mute: false, gain: 0.8, notes: [] },
       { id: 'bass', name: '贝斯', instrumentId: 'bass', mute: false, gain: 0.8, notes: [] },
       { id: 'keys', name: '键盘', instrumentId: 'keys', mute: false, gain: 0.7, notes: [] },
-      { id: 'lead', name: '主音', instrumentId: 'lead', mute: false, gain: 0.7, notes: [] },
+      { id: 'lead', name: '主旋律', instrumentId: 'lead', mute: false, gain: 0.7, notes: [] },
     ],
   }
 }

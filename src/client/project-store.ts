@@ -23,7 +23,7 @@ import {
   saveViewState,
   setLastProjectId,
 } from './local-state.ts'
-import { DEFAULT_SYNTH_PATCHES, resolveSynthPatch } from './instruments.ts'
+import { DEFAULT_SYNTH_PATCHES, defaultTrackName, resolveSynthPatch } from './instruments.ts'
 import { createStarterProject, generateRandomGrooveProject, SONG_PRESETS, type SynthPresetItem } from './presets.ts'
 
 export interface SessionState {
@@ -58,6 +58,12 @@ const DEFAULT_SCALE_ROOT = 9
 const DEFAULT_SCALE_ID = 'minor'
 
 const INSTRUMENT_CYCLE = ['lead', 'bass', 'pad', 'keys', 'acid', 'pluck', 'chip', 'bell', 'drums'] as const
+
+/** True when the track's name is the automatic one for its instrument, with or without a counter. */
+function hasAutoName(track: Track): boolean {
+  const base = defaultTrackName(track.instrumentId)
+  return track.name === base || (track.name.startsWith(`${base} `) && /^\d+$/.test(track.name.slice(base.length + 1)))
+}
 
 function summaryOf(project: Project, previous: readonly ProjectSummary[]): ProjectSummary[] {
   const next = previous.filter((item) => item.id !== project.id)
@@ -186,6 +192,11 @@ export class ProjectClient {
         ...track,
         ...patch,
       }
+      // A track still carrying its automatic name is renamed along with its instrument.
+      if (patch.name === undefined && nextInstrument !== track.instrumentId && hasAutoName(track)) {
+        const others = this.state.project.tracks.filter((item) => item.id !== trackId).map((item) => item.name)
+        updated.name = uniqueName(defaultTrackName(nextInstrument), others)
+      }
       if (nextSynth !== undefined && nextInstrument !== 'drums') {
         updated.synth = nextSynth
       } else {
@@ -282,7 +293,7 @@ export class ProjectClient {
     const instrumentId = INSTRUMENT_CYCLE[project.tracks.length % INSTRUMENT_CYCLE.length] ?? 'lead'
     const track: Track = {
       id: `t${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}`,
-      name: `音轨 ${project.tracks.length + 1}`,
+      name: uniqueName(defaultTrackName(instrumentId), project.tracks.map((item) => item.name)),
       instrumentId,
       mute: false,
       gain: 0.72,

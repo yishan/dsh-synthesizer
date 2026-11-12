@@ -6,6 +6,7 @@ import { INSTRUMENT_LABELS, listInstruments } from './instruments.ts'
 import { PianoRoll } from './PianoRoll.tsx'
 import { SONG_PRESETS } from './presets.ts'
 import { getProjectStore } from './project-store.ts'
+import { useSidebarWide } from './sidebar-state.ts'
 import { ensureStyles, rangeFill, trackColor } from './styles.ts'
 import { Transport } from './Transport.tsx'
 import { useProject } from './use-project.ts'
@@ -39,6 +40,7 @@ export function Editor(): JSX.Element {
   const state = useProject()
   const store = getProjectStore()
   const engine = getEngine()
+  const sidebarWide = useSidebarWide()
   useEffect(() => {
     ensureStyles()
     void store.hydrate()
@@ -84,7 +86,7 @@ export function Editor(): JSX.Element {
 
   return (
     <div data-panel="dsh-synthesizer" className="dsyn dsyn-page">
-      <header className="dsyn-top">
+      <header className={`dsyn-top${sidebarWide ? '' : ' is-inset'}`}>
         <div className="dsyn-group">
           <Transport variant="page" />
           <span className="dsyn-sep" aria-hidden="true" />

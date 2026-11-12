@@ -46,6 +46,10 @@ const CSS = `
   display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap;
   gap: 8px 16px; padding: 8px 12px; border-bottom: 1px solid var(--s-line);
 }
+/* With the host sidebar collapsed, the window controls and the host's own
+   sidebar and new-session buttons sit over the page's top-left corner. */
+.dsyn-top { transition: padding-left 150ms ease-out; }
+.dsyn-top.is-inset { padding-left: 156px; }
 .dsyn-group { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .dsyn-sep { width: 1px; height: 16px; background: var(--s-line); margin: 0 4px; }
 .dsyn-body { flex: 1; min-height: 0; display: flex; }
@@ -254,7 +258,26 @@ const CSS = `
 .dsyn-rec-dot { width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
 
 .dsyn-transport { display: flex; align-items: center; gap: 4px; }
-.dsyn-transport.is-stacked { flex-direction: column; }
+
+/* Sidebar transport: one row with the footprint of the sidebar's own entries.
+   The row is the hover target; its buttons are borderless until pointed at. */
+.dsyn-side {
+  display: flex; align-items: center; gap: 2px; flex: 1; min-width: 0; width: 100%;
+  height: 36px; padding: 0 6px; border-radius: 8px;
+  transition: background-color 120ms ease-out;
+}
+.dsyn-side:hover, .dsyn-side:focus-within { background: var(--s-hover); }
+.dsyn-side .dsyn-btn.is-quiet { color: var(--s-fg2); }
+.dsyn-side:hover .dsyn-btn.is-quiet, .dsyn-side.is-playing .dsyn-btn.is-quiet { color: var(--s-fg); }
+.dsyn-side .dsyn-btn:hover:not(:disabled) { background: var(--s-active); }
+.dsyn-side .dsyn-btn.is-danger[aria-pressed="true"] { color: var(--s-danger); border-color: transparent; }
+.dsyn-side-name {
+  flex: 1; min-width: 0; padding: 0 6px; font-size: 13px; color: var(--s-fg2);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.dsyn-side:hover .dsyn-side-name, .dsyn-side.is-playing .dsyn-side-name { color: var(--s-fg); }
+.dsyn-side .dsyn-readout { min-width: 0; padding: 0 4px; }
+.dsyn-side.is-rail { flex-direction: column; justify-content: center; width: auto; height: auto; padding: 2px; gap: 2px; }
 `
 
 const STYLE_ID = 'dsh-synthesizer-styles'

@@ -4,6 +4,20 @@
   "description": "Multi-track browser synthesizer for DeepSeek Harness. Loop a piano-roll sketch while the session stays open.",
   "type": "module",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/yishan/dsh-synthesizer.git"
+  },
+  "homepage": "https://github.com/yishan/dsh-synthesizer#readme",
+  "keywords": [
+    "deepseek-harness",
+    "dsh",
+    "dsh-plugin",
+    "synthesizer",
+    "groovebox",
+    "music",
+    "web-audio"
+  ],
   "main": "lib/index.js",
   "types": "lib/types/index.d.ts",
   "exports": {
@@ -47,7 +61,8 @@
   "scripts": {
     "build": "node build.mjs && tsc -p tsconfig.build.json",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "prepublishOnly": "npm run typecheck && npm test && npm run build"
   },
   "dependencies": {
     "zod": "4.4.3"

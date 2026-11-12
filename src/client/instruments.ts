@@ -28,6 +28,8 @@ export interface Instrument {
     pitch: number,
     velocity: number,
     patch?: SynthPatch,
+    /** Instrument-specific variant. For drums, the kit id. */
+    variant?: string,
   ): ScheduledNote
 }
 
@@ -425,148 +427,174 @@ function noiseHit(
   gain.connect(out)
   source.start(time)
   source.stop(time + decay + 0.02)
-  let stopped = false
-  return {
-    stop(stopTime: number) {
-      if (stopped) return
-      stopped = true
-      const at = Math.max(stopTime, time)
-      try { source.stop(at) } catch { /* Already stopped. */ }
-    },
-  }
+  return RING_OUT
 }
 
-function kick(ctx: AudioContext, out: AudioNode, time: number, velocity: number): ScheduledNote {
+/**
+ * A drum hit is a one-shot: it rings for its own length and ignores note-off.
+ * Cutting it at the end of a sixteenth-note step clipped kicks and cymbals.
+ */
+const RING_OUT: ScheduledNote = { stop() {} }
+
+interface SweepVoice {
+  type: OscillatorType
+  /** Pitch falls from `from` to `to` Hz over `sweep` seconds. */
+  from: number
+  to: number
+  sweep: number
+  decay: number
+  level: number
+}
+
+interface NoiseVoice {
+  decay: number
+  highpass: number
+  level: number
+}
+
+/** One synthesized drum kit: the same eight pieces, voiced differently. */
+export interface DrumKit {
+  id: string
+  label: string
+  description: string
+  kick: SweepVoice
+  tom: SweepVoice
+  snare: { type: OscillatorType; pitch: number; toneDecay: number; noiseDecay: number; highpass: number }
+  clap: { decay: number; highpass: number }
+  rim: { pitch: number; decay: number; filterHz: number }
+  hat: NoiseVoice
+  openHat: NoiseVoice
+  cymbal: NoiseVoice
+}
+
+export const DEFAULT_DRUM_KIT = 'classic'
+
+export const DRUM_KITS: readonly DrumKit[] = [
+  {
+    id: 'classic',
+    label: '电子鼓',
+    description: '干净利落的通用电子鼓',
+    kick: { type: 'sine', from: 155, to: 46, sweep: 0.12, decay: 0.24, level: 1.45 },
+    tom: { type: 'sine', from: 115, to: 68, sweep: 0.16, decay: 0.2, level: 1.25 },
+    snare: { type: 'triangle', pitch: 50, toneDecay: 0.08, noiseDecay: 0.16, highpass: 1200 },
+    clap: { decay: 0.18, highpass: 1300 },
+    rim: { pitch: 76, decay: 0.035, filterHz: 2400 },
+    hat: { decay: 0.05, highpass: 6200, level: 0.72 },
+    openHat: { decay: 0.26, highpass: 5600, level: 0.78 },
+    cymbal: { decay: 0.45, highpass: 4200, level: 0.85 },
+  },
+  {
+    id: '808',
+    label: '808',
+    description: '长尾低频底鼓、清脆军鼓和细亮的镲',
+    kick: { type: 'sine', from: 130, to: 40, sweep: 0.09, decay: 0.55, level: 1.5 },
+    tom: { type: 'sine', from: 150, to: 90, sweep: 0.2, decay: 0.32, level: 1.2 },
+    snare: { type: 'triangle', pitch: 55, toneDecay: 0.1, noiseDecay: 0.2, highpass: 2200 },
+    clap: { decay: 0.24, highpass: 1100 },
+    rim: { pitch: 81, decay: 0.03, filterHz: 3200 },
+    hat: { decay: 0.035, highpass: 8500, level: 0.65 },
+    openHat: { decay: 0.32, highpass: 7800, level: 0.7 },
+    cymbal: { decay: 0.7, highpass: 6000, level: 0.75 },
+  },
+  {
+    id: 'lofi',
+    label: '磁带 Lo-Fi',
+    description: '发闷、偏短、高频收敛的磁带质感',
+    kick: { type: 'sine', from: 105, to: 48, sweep: 0.1, decay: 0.2, level: 1.3 },
+    tom: { type: 'sine', from: 100, to: 62, sweep: 0.14, decay: 0.18, level: 1.1 },
+    snare: { type: 'triangle', pitch: 47, toneDecay: 0.09, noiseDecay: 0.13, highpass: 650 },
+    clap: { decay: 0.14, highpass: 900 },
+    rim: { pitch: 72, decay: 0.04, filterHz: 1700 },
+    hat: { decay: 0.04, highpass: 3800, level: 0.6 },
+    openHat: { decay: 0.2, highpass: 3400, level: 0.62 },
+    cymbal: { decay: 0.32, highpass: 2800, level: 0.65 },
+  },
+  {
+    id: 'chip',
+    label: '8-Bit',
+    description: '方波鼓和极短的噪声，红白机味道',
+    kick: { type: 'square', from: 240, to: 55, sweep: 0.06, decay: 0.1, level: 0.8 },
+    tom: { type: 'square', from: 300, to: 120, sweep: 0.08, decay: 0.12, level: 0.7 },
+    snare: { type: 'square', pitch: 64, toneDecay: 0.04, noiseDecay: 0.07, highpass: 2500 },
+    clap: { decay: 0.06, highpass: 3000 },
+    rim: { pitch: 88, decay: 0.02, filterHz: 5000 },
+    hat: { decay: 0.018, highpass: 9500, level: 0.6 },
+    openHat: { decay: 0.09, highpass: 9000, level: 0.6 },
+    cymbal: { decay: 0.16, highpass: 7000, level: 0.6 },
+  },
+]
+
+export function getDrumKit(id?: string): DrumKit {
+  return DRUM_KITS.find((kit) => kit.id === id) ?? DRUM_KITS[0]!
+}
+
+function sweepHit(ctx: AudioContext, out: AudioNode, time: number, velocity: number, voice: SweepVoice): ScheduledNote {
   const oscillator = ctx.createOscillator()
-  oscillator.type = 'sine'
-  oscillator.frequency.setValueAtTime(155, time)
-  oscillator.frequency.exponentialRampToValueAtTime(46, time + 0.12)
+  oscillator.type = voice.type
+  oscillator.frequency.setValueAtTime(voice.from, time)
+  oscillator.frequency.exponentialRampToValueAtTime(voice.to, time + voice.sweep)
   const gain = ctx.createGain()
-  gain.gain.setValueAtTime(amplitude(velocity) * 1.45, time)
-  gain.gain.exponentialRampToValueAtTime(0.001, time + 0.24)
+  gain.gain.setValueAtTime(amplitude(velocity) * voice.level, time)
+  gain.gain.exponentialRampToValueAtTime(0.001, time + voice.decay)
   oscillator.connect(gain)
   gain.connect(out)
   oscillator.start(time)
-  oscillator.stop(time + 0.26)
-  let stopped = false
-  return {
-    stop(stopTime: number) {
-      if (stopped) return
-      stopped = true
-      try { oscillator.stop(Math.max(stopTime, time)) } catch { /* Already stopped. */ }
-    },
-  }
+  oscillator.stop(time + voice.decay + 0.02)
+  return RING_OUT
 }
 
-function snare(ctx: AudioContext, out: AudioNode, time: number, velocity: number): ScheduledNote {
-  const body = tone(ctx, out, time, 50, velocity, {
-    type: 'triangle',
-    attack: 0.001,
-    decay: 0.08,
-    sustain: 0,
-    release: 0.04,
-  })
-  const noise = noiseHit(ctx, out, time, velocity, 0.16, 1200)
-  return {
-    stop(stopTime: number) {
-      body.stop(stopTime)
-      noise.stop(stopTime)
-    },
-  }
-}
-
-function clap(ctx: AudioContext, out: AudioNode, time: number, velocity: number): ScheduledNote {
-  const hit1 = noiseHit(ctx, out, time, velocity * 0.85, 0.025, 1500)
-  const hit2 = noiseHit(ctx, out, time + 0.012, velocity * 0.9, 0.03, 1500)
-  const tail = noiseHit(ctx, out, time + 0.024, velocity, 0.18, 1300)
-  return {
-    stop(stopTime: number) {
-      hit1.stop(stopTime)
-      hit2.stop(stopTime)
-      tail.stop(stopTime)
-    },
-  }
-}
-
-function rim(ctx: AudioContext, out: AudioNode, time: number, velocity: number): ScheduledNote {
-  return tone(ctx, out, time, 76, velocity * 1.1, {
-    type: 'square',
-    attack: 0.001,
-    decay: 0.035,
-    sustain: 0,
-    release: 0.02,
-    filterHz: 2400,
-    resonance: 6,
-  })
-}
-
-function tom(ctx: AudioContext, out: AudioNode, time: number, velocity: number): ScheduledNote {
-  const oscillator = ctx.createOscillator()
-  oscillator.type = 'sine'
-  oscillator.frequency.setValueAtTime(115, time)
-  oscillator.frequency.exponentialRampToValueAtTime(68, time + 0.16)
-  const gain = ctx.createGain()
-  gain.gain.setValueAtTime(amplitude(velocity) * 1.25, time)
-  gain.gain.exponentialRampToValueAtTime(0.001, time + 0.2)
-  oscillator.connect(gain)
-  gain.connect(out)
-  oscillator.start(time)
-  oscillator.stop(time + 0.22)
-  let stopped = false
-  return {
-    stop(stopTime: number) {
-      if (stopped) return
-      stopped = true
-      try { oscillator.stop(Math.max(stopTime, time)) } catch { /* Already stopped. */ }
-    },
-  }
-}
-
-function hat(ctx: AudioContext, out: AudioNode, time: number, velocity: number): ScheduledNote {
-  return noiseHit(ctx, out, time, velocity * 0.72, 0.05, 6200)
-}
-
-function openHat(ctx: AudioContext, out: AudioNode, time: number, velocity: number): ScheduledNote {
-  return noiseHit(ctx, out, time, velocity * 0.78, 0.26, 5600)
-}
-
-function cymbal(ctx: AudioContext, out: AudioNode, time: number, velocity: number): ScheduledNote {
-  const shimmer = noiseHit(ctx, out, time, velocity * 0.85, 0.45, 4200)
-  const bellTone = tone(ctx, out, time, 84, velocity * 0.5, {
-    type: 'square',
-    detuneCents: [-19, 23],
-    attack: 0.002,
-    decay: 0.18,
-    sustain: 0,
-    release: 0.15,
-    filterHz: 7500,
-  })
-  return {
-    stop(stopTime: number) {
-      shimmer.stop(stopTime)
-      bellTone.stop(stopTime)
-    },
-  }
-}
-
-function playDrum(ctx: AudioContext, out: AudioNode, time: number, piece: DrumPiece, velocity: number): ScheduledNote {
+function playDrum(
+  ctx: AudioContext,
+  out: AudioNode,
+  time: number,
+  piece: DrumPiece,
+  velocity: number,
+  kit: DrumKit,
+): ScheduledNote {
   switch (piece) {
     case 'kick':
-      return kick(ctx, out, time, velocity)
-    case 'rim':
-      return rim(ctx, out, time, velocity)
-    case 'snare':
-      return snare(ctx, out, time, velocity)
-    case 'clap':
-      return clap(ctx, out, time, velocity)
-    case 'hat':
-      return hat(ctx, out, time, velocity)
+      return sweepHit(ctx, out, time, velocity, kit.kick)
     case 'tom':
-      return tom(ctx, out, time, velocity)
+      return sweepHit(ctx, out, time, velocity, kit.tom)
+    case 'snare':
+      tone(ctx, out, time, kit.snare.pitch, velocity, {
+        type: kit.snare.type,
+        attack: 0.001,
+        decay: kit.snare.toneDecay,
+        sustain: 0,
+        release: 0.04,
+      }).stop(time + kit.snare.toneDecay)
+      return noiseHit(ctx, out, time, velocity, kit.snare.noiseDecay, kit.snare.highpass)
+    case 'clap':
+      noiseHit(ctx, out, time, velocity * 0.85, 0.025, kit.clap.highpass + 200)
+      noiseHit(ctx, out, time + 0.012, velocity * 0.9, 0.03, kit.clap.highpass + 200)
+      return noiseHit(ctx, out, time + 0.024, velocity, kit.clap.decay, kit.clap.highpass)
+    case 'rim':
+      tone(ctx, out, time, kit.rim.pitch, velocity * 1.1, {
+        type: 'square',
+        attack: 0.001,
+        decay: kit.rim.decay,
+        sustain: 0,
+        release: 0.02,
+        filterHz: kit.rim.filterHz,
+        resonance: 6,
+      }).stop(time + kit.rim.decay)
+      return RING_OUT
+    case 'hat':
+      return noiseHit(ctx, out, time, velocity * kit.hat.level, kit.hat.decay, kit.hat.highpass)
     case 'openHat':
-      return openHat(ctx, out, time, velocity)
+      return noiseHit(ctx, out, time, velocity * kit.openHat.level, kit.openHat.decay, kit.openHat.highpass)
     case 'cymbal':
-      return cymbal(ctx, out, time, velocity)
+      tone(ctx, out, time, 84, velocity * 0.5, {
+        type: 'square',
+        detuneCents: [-19, 23],
+        attack: 0.002,
+        decay: kit.cymbal.decay * 0.4,
+        sustain: 0,
+        release: 0.15,
+        filterHz: Math.min(16000, kit.cymbal.highpass + 3300),
+      }).stop(time + kit.cymbal.decay * 0.4)
+      return noiseHit(ctx, out, time, velocity * kit.cymbal.level, kit.cymbal.decay, kit.cymbal.highpass)
     default: {
       const unexpected: never = piece
       throw new Error(`unexpected drum ${String(unexpected)}`)
@@ -584,11 +612,12 @@ function playBuiltin(
   pitch: number,
   velocity: number,
   patch?: SynthPatch,
+  variant?: string,
 ): ScheduledNote {
   if (id === 'drums') {
     const piece = drumPiece(pitch)
     if (piece === null) return silence()
-    return playDrum(ctx, out, time, piece, velocity)
+    return playDrum(ctx, out, time, piece, velocity, getDrumKit(variant))
   }
   if (patch !== undefined) {
     return tone(ctx, out, time, pitch, velocity, patchToToneOptions(patch))
@@ -644,8 +673,8 @@ function builtin(id: BuiltinId): Instrument {
   return {
     id,
     kind: 'synth',
-    noteOn(ctx, out, time, pitch, velocity, patch) {
-      return playBuiltin(id, ctx, out, time, pitch, velocity, patch)
+    noteOn(ctx, out, time, pitch, velocity, patch, variant) {
+      return playBuiltin(id, ctx, out, time, pitch, velocity, patch, variant)
     },
   }
 }

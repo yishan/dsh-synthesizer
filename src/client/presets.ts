@@ -29,10 +29,105 @@ export interface SynthPresetItem {
   id: string
   instrumentId: string
   label: string
-  badge: string
+  badge?: string
   description: string
-  color: string
+  color?: string
   patch: SynthPatch
+}
+
+/** Shorthand for one patch. Order: waveform, detune, sub, cutoff, Q, envMod, A, D, S, R, delay, drive. */
+function patch(
+  waveform: SynthPatch['waveform'],
+  detune: number,
+  subMix: number,
+  cutoff: number,
+  resonance: number,
+  envMod: number,
+  attack: number,
+  decay: number,
+  sustain: number,
+  release: number,
+  delayMix: number,
+  drive: number,
+): SynthPatch {
+  return { waveform, detune, subMix, cutoff, resonance, envMod, attack, decay, sustain, release, delayMix, drive }
+}
+
+/**
+ * Further sounds per instrument. The first preset of each instrument (below)
+ * is its default patch; these are alternatives within the same instrument.
+ */
+const EXTRA_SYNTH_PRESETS: readonly SynthPresetItem[] = [
+  // Lead
+  { id: 'lead-square', instrumentId: 'lead', label: '方波主音', description: '中空的方波，轻微失谐，适合旋律线',
+    patch: patch('square', 6, 0.1, 3200, 2, 0.3, 0.005, 0.15, 0.7, 0.15, 0.25, 0.1) },
+  { id: 'lead-sine', instrumentId: 'lead', label: '柔和正弦', description: '圆润干净的正弦，带一点回声',
+    patch: patch('sine', 0, 0, 6000, 0.7, 0, 0.02, 0.2, 0.8, 0.3, 0.3, 0) },
+  { id: 'lead-bright', instrumentId: 'lead', label: '锐利锯齿', description: '明亮、带过载的单锯齿，穿透力强',
+    patch: patch('sawtooth', 3, 0, 9000, 3, 0.5, 0.002, 0.1, 0.6, 0.1, 0.15, 0.35) },
+  // Bass
+  { id: 'bass-sub', instrumentId: 'bass', label: 'Sub 低频', description: '几乎只有基音的正弦低频',
+    patch: patch('sine', 0, 0.5, 400, 0.7, 0.1, 0.005, 0.2, 0.9, 0.12, 0, 0.15) },
+  { id: 'bass-reese', instrumentId: 'bass', label: 'Reese', description: '两路大失谐锯齿互相拍频的厚贝斯',
+    patch: patch('sawtooth', 22, 0.3, 700, 1.5, 0.15, 0.01, 0.3, 0.85, 0.2, 0, 0.3) },
+  { id: 'bass-pluck', instrumentId: 'bass', label: '弹拨贝斯', description: '起音有滤波包络的短促贝斯，适合 Disco 和 Funk',
+    patch: patch('sawtooth', 0, 0.25, 500, 3, 0.7, 0.002, 0.16, 0.2, 0.1, 0, 0.2) },
+  // Pad
+  { id: 'pad-strings', instrumentId: 'pad', label: '弦乐', description: '慢起音的失谐锯齿合奏',
+    patch: patch('sawtooth', 14, 0, 3800, 0.8, 0.1, 0.35, 0.5, 0.85, 0.9, 0.2, 0) },
+  { id: 'pad-dark', instrumentId: 'pad', label: '暗色铺底', description: '低沉、缓慢的三角波铺底',
+    patch: patch('triangle', 10, 0.4, 900, 1, 0.2, 0.6, 0.8, 0.8, 1.4, 0.3, 0) },
+  { id: 'pad-glass', instrumentId: 'pad', label: '玻璃铺底', description: '带共鸣的方波，尾音长而通透',
+    patch: patch('square', 8, 0, 5200, 2.5, 0.3, 0.25, 0.6, 0.6, 1.2, 0.45, 0) },
+  // Keys
+  { id: 'keys-organ', instrumentId: 'keys', label: '风琴', description: '持续不衰减的正弦加低八度',
+    patch: patch('sine', 4, 0.6, 5000, 0.7, 0, 0.005, 0.05, 1, 0.08, 0.1, 0.2) },
+  { id: 'keys-clav', instrumentId: 'keys', label: 'Clav', description: '短促有咬字的方波键盘',
+    patch: patch('square', 0, 0, 2600, 4, 0.6, 0.002, 0.12, 0.25, 0.08, 0, 0.25) },
+  { id: 'keys-warm', instrumentId: 'keys', label: '温暖电钢', description: '三角波电钢，衰减慢，略带回声',
+    patch: patch('triangle', 5, 0.2, 1800, 1, 0.35, 0.004, 0.5, 0.3, 0.4, 0.2, 0) },
+  // Acid
+  { id: 'acid-squelch', instrumentId: 'acid', label: '尖叫 303', description: '极高共鸣、强包络扫频',
+    patch: patch('sawtooth', 0, 0, 300, 16, 0.95, 0.002, 0.14, 0.15, 0.08, 0.2, 0.5) },
+  { id: 'acid-square', instrumentId: 'acid', label: '方波 303', description: '方波版酸液线，更空、更木质',
+    patch: patch('square', 0, 0, 500, 11, 0.75, 0.002, 0.2, 0.2, 0.1, 0.1, 0.3) },
+  // Pluck
+  { id: 'pluck-muted', instrumentId: 'pluck', label: '闷音拨弦', description: '很短的闷音，适合切分节奏',
+    patch: patch('sawtooth', 0, 0, 900, 2, 0.6, 0.002, 0.09, 0, 0.08, 0.2, 0) },
+  { id: 'pluck-harp', instrumentId: 'pluck', label: '竖琴', description: '三角波长衰减拨弦',
+    patch: patch('triangle', 3, 0, 4200, 1, 0.3, 0.003, 0.5, 0, 0.6, 0.35, 0) },
+  // Chip
+  { id: 'chip-triangle', instrumentId: 'chip', label: '三角波', description: '红白机的三角波声道，常用作贝斯',
+    patch: patch('triangle', 0, 0, 12000, 0.7, 0, 0.002, 0.05, 1, 0.03, 0, 0) },
+  { id: 'chip-pulse', instrumentId: 'chip', label: '失谐脉冲', description: '两路失谐方波，带回声的 8-bit 主音',
+    patch: patch('square', 9, 0, 9000, 0.7, 0, 0.002, 0.08, 0.5, 0.06, 0.25, 0) },
+  // Bell
+  { id: 'bell-box', instrumentId: 'bell', label: '音乐盒', description: '纯正弦短音，像八音盒',
+    patch: patch('sine', 0, 0, 8000, 1, 0.2, 0.002, 0.6, 0, 0.8, 0.3, 0) },
+  { id: 'bell-glass', instrumentId: 'bell', label: '玻璃铃', description: '大失谐三角波，金属感长尾',
+    patch: patch('triangle', 18, 0, 7000, 5, 0.4, 0.002, 0.9, 0, 1.2, 0.5, 0) },
+]
+
+/** The patch of a preset by id. */
+function presetPatch(id: string): SynthPatch {
+  const found = EXTRA_SYNTH_PRESETS.find((item) => item.id === id)
+  if (found === undefined) throw new Error(`unknown preset ${id}`)
+  return { ...found.patch }
+}
+
+/** Presets offered for one instrument, default first. */
+export function presetsFor(instrumentId: string): readonly SynthPresetItem[] {
+  return SYNTH_PATCH_PRESETS.filter((item) => item.instrumentId === instrumentId)
+}
+
+const PATCH_KEYS = [
+  'detune', 'subMix', 'cutoff', 'resonance', 'envMod', 'attack', 'decay', 'sustain', 'release', 'delayMix', 'drive',
+] as const
+
+/** True when a track's patch is exactly this preset, i.e. it has not been tweaked since. */
+export function isPreset(current: SynthPatch, preset: SynthPresetItem): boolean {
+  if (current.waveform !== preset.patch.waveform) return false
+  return PATCH_KEYS.every((key) => Math.abs(current[key] - preset.patch[key]) < 1e-6)
 }
 
 export const SYNTH_PATCH_PRESETS: readonly SynthPresetItem[] = [
@@ -108,6 +203,7 @@ export const SYNTH_PATCH_PRESETS: readonly SynthPresetItem[] = [
     color: '#14b8a6',
     patch: DEFAULT_SYNTH_PATCHES.bell!,
   },
+  ...EXTRA_SYNTH_PRESETS,
 ]
 
 export interface ScaleDefinition {
@@ -724,6 +820,60 @@ function buildAmbientProject(id = createProjectId()): Project {
   }
 }
 
+/**
+ * 6. Disco House (午夜舞池 · 122 BPM · A Minor). Uses the 808 kit and the newer sounds.
+ */
+function buildDiscoProject(id = createProjectId()): Project {
+  return {
+    version: 1,
+    id,
+    name: '午夜舞池 · Disco House',
+    bpm: 122,
+    beatsPerBar: BEATS_PER_BAR,
+    bars: 4,
+    loop: true,
+    scaleRoot: 9,
+    scaleId: 'minor',
+    tracks: [
+      { id: 'drums', name: '808 鼓组', instrumentId: 'drums', mute: false, gain: 0.85, kit: '808',
+        notes: generateDrumPattern('disco', 4) },
+      { id: 'bass', name: '弹拨贝斯', instrumentId: 'bass', mute: false, gain: 0.84,
+        synth: presetPatch('bass-pluck'), notes: generateMelodicPattern('octaveBass', 4, 9, 'minor') },
+      { id: 'pad', name: '弦乐铺底', instrumentId: 'pad', mute: false, gain: 0.6,
+        synth: presetPatch('pad-strings'), notes: generateMelodicPattern('chords', 4, 9, 'minor') },
+      { id: 'pluck', name: '闷音琶音', instrumentId: 'pluck', mute: false, gain: 0.66,
+        synth: presetPatch('pluck-muted'), notes: generateMelodicPattern('arpUp', 4, 9, 'minor') },
+    ],
+  }
+}
+
+/**
+ * 7. Tape Sunset (磁带黄昏 · 78 BPM · D Dorian). Uses the lo-fi kit.
+ */
+function buildTapeProject(id = createProjectId()): Project {
+  return {
+    version: 1,
+    id,
+    name: '磁带黄昏 · Tape Sunset',
+    bpm: 78,
+    beatsPerBar: BEATS_PER_BAR,
+    bars: 4,
+    loop: true,
+    scaleRoot: 2,
+    scaleId: 'dorian',
+    tracks: [
+      { id: 'drums', name: '磁带鼓组', instrumentId: 'drums', mute: false, gain: 0.8, kit: 'lofi',
+        notes: generateDrumPattern('lofi', 4) },
+      { id: 'bass', name: 'Sub 低频', instrumentId: 'bass', mute: false, gain: 0.82,
+        synth: presetPatch('bass-sub'), notes: generateMelodicPattern('octaveBass', 4, 2, 'dorian') },
+      { id: 'keys', name: '温暖电钢', instrumentId: 'keys', mute: false, gain: 0.66,
+        synth: presetPatch('keys-warm'), notes: generateMelodicPattern('chords', 4, 2, 'dorian') },
+      { id: 'bell', name: '音乐盒', instrumentId: 'bell', mute: false, gain: 0.5,
+        synth: presetPatch('bell-box'), notes: generateMelodicPattern('arpUp', 4, 2, 'dorian') },
+    ],
+  }
+}
+
 export const SONG_PRESETS: readonly SongPresetItem[] = [
   {
     id: 'synthwave',
@@ -764,6 +914,22 @@ export const SONG_PRESETS: readonly SongPresetItem[] = [
     bpm: 96,
     accent: '#14b8a6',
     build: buildAmbientProject,
+  },
+  {
+    id: 'disco',
+    title: '午夜舞池',
+    subtitle: 'Disco House · 122 BPM',
+    bpm: 122,
+    accent: '#8b5cf6',
+    build: buildDiscoProject,
+  },
+  {
+    id: 'tape',
+    title: '磁带黄昏',
+    subtitle: 'Tape Sunset · 78 BPM',
+    bpm: 78,
+    accent: '#f59e0b',
+    build: buildTapeProject,
   },
 ]
 

@@ -149,4 +149,19 @@ describe('project schema', () => {
     expect(uniqueName('夜曲 2', ['夜曲', '夜曲 2'])).toBe('夜曲 3')
     expect(uniqueName('  ', ['未命名'])).toBe('未命名 2')
   })
+
+  it('keeps a drum kit only on drum tracks', () => {
+    const project = createDefaultProject('kits')
+    const [drums, bass] = project.tracks
+    if (drums === undefined || bass === undefined) throw new Error('default tracks missing')
+    const withKits = sanitizeProject({
+      ...project,
+      tracks: [{ ...drums, kit: '808' }, { ...bass, kit: '808' }],
+    })
+    expect(withKits.tracks[0]?.kit).toBe('808')
+    expect(withKits.tracks[1]?.kit).toBeUndefined()
+    expect(projectSchema.safeParse(withKits).success).toBe(true)
+    expect(sanitizeProject({ ...project, tracks: [{ ...drums, kit: '../x' }] }).tracks[0]?.kit).toBeUndefined()
+    expect(projectSchema.safeParse({ ...project, tracks: [{ ...drums, kit: 'bad kit!' }] }).success).toBe(false)
+  })
 })

@@ -29,7 +29,8 @@ function installHost(options: { strictV1?: boolean } = {}): { saved: Map<string,
     if (init?.method === 'POST') {
       const project = JSON.parse(String(init.body)) as Project
       posts.push(project)
-      const hasNewFields = project.scaleRoot !== undefined || project.tracks.some((track) => track.synth !== undefined)
+      const hasNewFields = project.scaleRoot !== undefined
+        || project.tracks.some((track) => track.synth !== undefined || track.kit !== undefined)
       if (options.strictV1 === true && hasNewFields) {
         return Response.json({ ok: false, error: 'invalid_project' }, { status: 400 })
       }
@@ -267,5 +268,35 @@ describe('project client', () => {
     installHost()
     await client.flush()
     expect(client.getState().saveFailed).toBe(false)
+  })
+
+  it('saves the drum kit with the track, and keeps it against an older Host', async () => {
+    const host = installHost()
+    const client = new ProjectClient()
+    await client.hydrate()
+    const id = client.getState().project.id
+    const drums = client.getState().project.tracks.find((track) => track.instrumentId === 'drums')
+    const melodic = client.getState().project.tracks.find((track) => track.instrumentId !== 'drums')
+    if (drums === undefined || melodic === undefined) throw new Error('starter tracks missing')
+
+    client.setTrackKit(drums.id, '808')
+    client.setTrackKit(melodic.id, '808')
+    await vi.advanceTimersByTimeAsync(1000)
+    const saved = host.saved.get(id)
+    expect(saved?.tracks.find((track) => track.id === drums.id)?.kit).toBe('808')
+    expect(saved?.tracks.find((track) => track.id === melodic.id)?.kit).toBeUndefined()
+
+    client.updateTrack(drums.id, { instrumentId: 'lead' })
+    expect(client.getState().project.tracks.find((track) => track.id === drums.id)?.kit).toBeUndefined()
+
+    const old = installHost({ strictV1: true })
+    const legacy = new ProjectClient()
+    await legacy.hydrate()
+    const legacyDrums = legacy.getState().project.tracks.find((track) => track.instrumentId === 'drums')
+    if (legacyDrums === undefined) throw new Error('starter drums missing')
+    legacy.setTrackKit(legacyDrums.id, 'lofi')
+    await vi.advanceTimersByTimeAsync(1000)
+    expect(old.saved.get(legacy.getState().project.id)?.tracks[0]?.kit).toBeUndefined()
+    expect(legacy.getState().project.tracks.find((track) => track.id === legacyDrums.id)?.kit).toBe('lofi')
   })
 })

@@ -136,6 +136,7 @@ export class Engine {
         // Audition at the track's own level, so a quiet track previews quietly.
         gain: selectedTrack?.gain ?? 0.82,
         synth: effectiveSynth,
+        kit: instrumentId === 'drums' && selectedTrack?.instrumentId === 'drums' ? selectedTrack.kit : undefined,
         time: audio.currentTime,
         stopTime: audio.currentTime + 8,
       }], audio, (event) => this.outputFor(event))

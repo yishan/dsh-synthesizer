@@ -16,6 +16,7 @@ export interface ScheduleEvent {
   velocity: number
   gain: number
   synth?: SynthPatch
+  kit?: string
   time: number
   stopTime: number
 }
@@ -65,6 +66,7 @@ function collect(
           velocity: note.velocity,
           gain: track.gain,
           synth: track.synth,
+          kit: track.kit,
           time,
           stopTime: time + note.durationBeats * secondsPerBeat,
         })
@@ -134,6 +136,7 @@ export function playEvents(
       event.pitch,
       event.velocity,
       event.synth,
+      event.kit,
     )
     voice.stop(event.stopTime)
     voices.push(voice)

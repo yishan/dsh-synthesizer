@@ -3,6 +3,7 @@ import { z } from 'zod'
 import {
   BEATS_PER_BAR,
   ID_PATTERN,
+  KIT_PATTERN,
   MAX_BARS,
   MAX_LOOP_BEATS,
   MAX_NOTES_PER_TRACK,
@@ -46,6 +47,7 @@ export const trackSchema = z.strictObject({
   mute: z.boolean(),
   gain: z.number().min(0).max(1),
   synth: synthPatchSchema.optional(),
+  kit: z.string().regex(KIT_PATTERN).optional(),
   notes: z.array(noteSchema).max(MAX_NOTES_PER_TRACK),
 })
 

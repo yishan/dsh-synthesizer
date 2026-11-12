@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest'
-import { DEFAULT_SYNTH_PATCHES, drumPiece, getInstrument, listInstruments } from '../src/client/instruments.ts'
+import { DEFAULT_SYNTH_PATCHES, DRUM_KITS, drumPiece, getDrumKit, getInstrument, listInstruments } from '../src/client/instruments.ts'
+import { SYNTH_PATCH_PRESETS, isPreset, presetsFor } from '../src/client/presets.ts'
+import { DRUM_PITCHES, synthPatchSchema } from '../src/schema.ts'
 import { auditionBase, auditionPitch } from '../src/client/audition.ts'
 
 interface FakeNode {
@@ -160,5 +162,56 @@ describe('instruments', () => {
     const scheduled = envelope.length
     voice.stop(5)
     expect(envelope).toHaveLength(scheduled)
+  })
+
+  it('offers several valid sounds per melodic instrument, default first', () => {
+    const ids = SYNTH_PATCH_PRESETS.map((preset) => preset.id)
+    expect(new Set(ids).size).toBe(ids.length)
+    for (const preset of SYNTH_PATCH_PRESETS) {
+      expect(synthPatchSchema.safeParse(preset.patch).success, preset.id).toBe(true)
+    }
+    for (const instrumentId of ['lead', 'bass', 'pad', 'keys', 'acid', 'pluck', 'chip', 'bell']) {
+      const presets = presetsFor(instrumentId)
+      expect(presets.length, instrumentId).toBeGreaterThanOrEqual(3)
+      const first = presets[0]
+      const fallback = DEFAULT_SYNTH_PATCHES[instrumentId]
+      if (first === undefined || fallback === undefined) throw new Error(`missing default for ${instrumentId}`)
+      expect(isPreset(fallback, first)).toBe(true)
+      expect(isPreset({ ...fallback, cutoff: fallback.cutoff + 1 }, first)).toBe(false)
+      // No two sounds of one instrument are the same patch.
+      for (const [index, preset] of presets.entries()) {
+        expect(presets.findIndex((other) => isPreset(other.patch, preset)), preset.id).toBe(index)
+      }
+    }
+  })
+
+  it('voices every drum piece in every kit, and falls back to the default kit', () => {
+    expect(DRUM_KITS.map((kit) => kit.id)).toEqual(['classic', '808', 'lofi', 'chip'])
+    expect(getDrumKit('nope').id).toBe('classic')
+    expect(getDrumKit(undefined).id).toBe('classic')
+    for (const kit of DRUM_KITS) {
+      for (const pitch of DRUM_PITCHES) {
+        const fake = fakeContext()
+        getInstrument('drums').noteOn(fake.ctx, {} as AudioNode, 0, pitch, 100, undefined, kit.id).stop(0.1)
+        expect(fake.created.length, `${kit.id}:${pitch}`).toBeGreaterThan(0)
+      }
+    }
+    const kickStart = (kitId?: string): number | undefined => {
+      const fake = fakeContext()
+      getInstrument('drums').noteOn(fake.ctx, {} as AudioNode, 0, 36, 100, undefined, kitId)
+      return fake.created.find((node) => node.kind === 'osc')?.frequency.values[0]?.value
+    }
+    expect(kickStart()).toBe(155)
+    expect(kickStart('808')).toBe(130)
+    expect(kickStart('chip')).toBe(240)
+  })
+
+  it('lets a drum hit ring out instead of cutting it at note-off', () => {
+    const fake = fakeContext()
+    const stops: number[] = []
+    const voice = getInstrument('drums').noteOn(fake.ctx, {} as AudioNode, 0, 36, 100, undefined, '808')
+    for (const node of fake.created) node.stop = () => { stops.push(1) }
+    voice.stop(0.1)
+    expect(stops).toHaveLength(0)
   })
 })

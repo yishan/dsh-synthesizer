@@ -206,6 +206,11 @@ export class ProjectClient {
     }, `synth:${trackId}`)
   }
 
+  /** Choose the drum kit of a drum track. */
+  setTrackKit(trackId: string, kit: string): void {
+    this.mapTrack(trackId, (track) => track.instrumentId === 'drums' ? { ...track, kit } : track)
+  }
+
   applySynthPreset(trackId: string, preset: SynthPresetItem): void {
     this.mapTrack(trackId, (track) => ({
       ...track,

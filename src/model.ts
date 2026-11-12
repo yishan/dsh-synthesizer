@@ -43,6 +43,8 @@ export function isQuantized(value: number): boolean {
   return Math.abs(steps - Math.round(steps)) < 1e-6
 }
 
+export const KIT_PATTERN = /^[A-Za-z0-9_-]{1,32}$/
+
 export const SYNTH_WAVEFORMS = ['sawtooth', 'square', 'triangle', 'sine'] as const
 export type SynthWaveform = (typeof SYNTH_WAVEFORMS)[number]
 
@@ -75,6 +77,8 @@ export interface Track {
   mute: boolean
   gain: number
   synth?: SynthPatch | undefined
+  /** Drum tracks only: which drum kit plays the track. Absent means the default kit. */
+  kit?: string | undefined
   notes: Note[]
 }
 
@@ -211,6 +215,9 @@ export function sanitizeProject(project: Project): Project {
     if (track.synth !== undefined && baseTrack.instrumentId !== 'drums') {
       baseTrack.synth = sanitizeSynthPatch(track.synth)
     }
+    if (baseTrack.instrumentId === 'drums' && typeof track.kit === 'string' && KIT_PATTERN.test(track.kit)) {
+      baseTrack.kit = track.kit
+    }
     return baseTrack
   })
 
@@ -276,6 +283,7 @@ export function coerceProject(value: unknown): Project | null {
       mute: entry.mute === true,
       gain: num(entry.gain, 0.8),
       ...(synth !== null ? { synth } : {}),
+      ...(typeof entry.kit === 'string' ? { kit: entry.kit } : {}),
       notes,
     })
   }

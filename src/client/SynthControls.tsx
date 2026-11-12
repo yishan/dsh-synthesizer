@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import { DRUM_PITCHES, type SynthPatch, type SynthWaveform, type Track } from '../model.ts'
 import { getEngine } from './engine.ts'
-import { DRUM_LABELS, resolveSynthPatch } from './instruments.ts'
-import { SYNTH_PATCH_PRESETS } from './presets.ts'
+import { DEFAULT_DRUM_KIT, DRUM_KITS, DRUM_LABELS, INSTRUMENT_LABELS, resolveSynthPatch } from './instruments.ts'
+import { isPreset, presetsFor } from './presets.ts'
 import { Icon } from './icons.tsx'
 import { getProjectStore } from './project-store.ts'
 import { rangeFill } from './styles.ts'
@@ -25,6 +25,8 @@ const DRUM_KEY_HINTS: Record<number, string> = {
   49: 'O',
 }
 
+const MELODIC_INSTRUMENTS = ['lead', 'bass', 'pad', 'keys', 'acid', 'pluck', 'chip', 'bell'] as const
+
 /** Convert cutoff (80..12000Hz) to perceptual 0..100 Brightness macro. */
 function cutoffToBrightness(cutoff: number): number {
   const ratio = Math.max(80, Math.min(12000, cutoff)) / 80
@@ -45,9 +47,36 @@ export function SynthControls({ track, playing }: { track: Track; playing: boole
   const patch = resolveSynthPatch(track.instrumentId, track.synth)
 
   if (isDrums) {
+    const activeKit = track.kit ?? DEFAULT_DRUM_KIT
     return (
-      <div className="dsyn-spread" aria-label="鼓组试听">
-        <div className="dsyn-line">
+      <>
+        <div className="dsyn-spread">
+          <div className="dsyn-line" role="group" aria-label="鼓组">
+            <span className="dsyn-label">鼓组</span>
+            {DRUM_KITS.map((kit) => (
+              <button
+                key={kit.id}
+                type="button"
+                title={kit.description}
+                aria-pressed={activeKit === kit.id}
+                onClick={() => {
+                  store.setTrackKit(track.id, kit.id)
+                  // Let the new kit reach the engine's view of the track before auditioning it.
+                  setTimeout(() => {
+                    engine.previewDown('drums', 36)
+                    setTimeout(() => { engine.previewDown('drums', 38) }, 180)
+                  }, 0)
+                }}
+                className="dsyn-btn"
+              >
+                {kit.label}
+              </button>
+            ))}
+          </div>
+          <Oscilloscope patch={patch} playing={playing} isDrums />
+        </div>
+        <div className="dsyn-line" aria-label="鼓组试听">
+          <span className="dsyn-label">试听</span>
           {[...DRUM_PITCHES].reverse().map((pitch) => {
             const info = DRUM_LABELS[pitch]
             if (info === undefined) return null
@@ -67,8 +96,7 @@ export function SynthControls({ track, playing }: { track: Track; playing: boole
             )
           })}
         </div>
-        <Oscilloscope patch={patch} playing={playing} isDrums />
-      </div>
+      </>
     )
   }
 
@@ -76,6 +104,8 @@ export function SynthControls({ track, playing }: { track: Track; playing: boole
     store.updateTrackSynth(track.id, partial)
   }
   const auditionPitch = track.instrumentId === 'bass' || track.instrumentId === 'acid' ? 45 : 60
+
+  const presets = presetsFor(track.instrumentId)
 
   // Four macro values (0..100) derived from the patch.
   const brightness = cutoffToBrightness(patch.cutoff)
@@ -86,24 +116,27 @@ export function SynthControls({ track, playing }: { track: Track; playing: boole
   return (
     <>
       <div className="dsyn-spread">
-        <div className="dsyn-line" role="group" aria-label="音色预设">
-          {SYNTH_PATCH_PRESETS.map((preset) => (
-            <button
-              key={preset.id}
-              type="button"
-              title={preset.description}
-              aria-pressed={track.instrumentId === preset.instrumentId}
-              onClick={() => {
-                store.applySynthPreset(track.id, preset)
-                const testPitch = preset.id === 'bass' || preset.id === 'acid' ? 45 : 60
-                engine.previewDown(preset.instrumentId, testPitch, preset.patch)
-                setTimeout(() => { engine.previewUp(testPitch) }, 200)
-              }}
-              className="dsyn-btn"
-            >
-              {preset.label.split(' ')[0]}
-            </button>
-          ))}
+        <div className="dsyn-line" role="group" aria-label="乐器">
+          <span className="dsyn-label">乐器</span>
+          <div className="dsyn-seg" role="tablist">
+            {MELODIC_INSTRUMENTS.map((id) => (
+              <button
+                key={id}
+                type="button"
+                role="tab"
+                aria-selected={track.instrumentId === id}
+                onClick={() => {
+                  if (track.instrumentId === id) return
+                  store.updateTrack(track.id, { instrumentId: id })
+                  const base = id === 'bass' || id === 'acid' ? 45 : 60
+                  engine.previewDown(id, base, resolveSynthPatch(id))
+                  setTimeout(() => { engine.previewUp(base) }, 200)
+                }}
+              >
+                {(INSTRUMENT_LABELS[id] ?? id).split(' ')[0]}
+              </button>
+            ))}
+          </div>
         </div>
         <div className="dsyn-line">
           <button
@@ -119,6 +152,28 @@ export function SynthControls({ track, playing }: { track: Track; playing: boole
           </button>
           <Oscilloscope patch={patch} playing={playing} isDrums={false} />
         </div>
+      </div>
+
+      <div className="dsyn-line" role="group" aria-label="音色预设">
+        <span className="dsyn-label">音色</span>
+        {presets.map((preset) => (
+          <button
+            key={preset.id}
+            type="button"
+            title={preset.description}
+            aria-pressed={isPreset(patch, preset)}
+            onClick={() => {
+              store.applySynthPreset(track.id, preset)
+              engine.previewDown(preset.instrumentId, auditionPitch, preset.patch)
+              setTimeout(() => { engine.previewUp(auditionPitch) }, 200)
+            }}
+            className="dsyn-btn"
+          >
+            {/* The original eight carry an English suffix ("超级锯齿 Lead"); the rest are already short. */}
+            {preset.badge !== undefined ? preset.label.split(' ')[0] : preset.label}
+          </button>
+        ))}
+        {presets.some((preset) => isPreset(patch, preset)) ? null : <span className="dsyn-caption">已调整</span>}
       </div>
 
       <div className="dsyn-macros">

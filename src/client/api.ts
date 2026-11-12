@@ -160,11 +160,16 @@ export async function saveProject(project: Project, options: { keepalive?: boole
   } catch (error) {
     const hasNewFields = clean.scaleRoot !== undefined
       || clean.scaleId !== undefined
-      || clean.tracks.some((track) => track.synth !== undefined)
+      || clean.tracks.some((track) => track.synth !== undefined || track.kit !== undefined)
     if (!hasNewFields || !(error instanceof Error) || error.message !== 'invalid_project') throw error
     const saved = mergeSynthPatches(await postProject(legacyWire(clean), keepalive), patches)
+    const kits = new Map(clean.tracks.map((track) => [track.id, track.kit]))
     return {
       ...saved,
+      tracks: saved.tracks.map((track) => {
+        const kit = kits.get(track.id)
+        return kit !== undefined ? { ...track, kit } : track
+      }),
       ...(clean.scaleRoot !== undefined ? { scaleRoot: clean.scaleRoot } : {}),
       ...(clean.scaleId !== undefined ? { scaleId: clean.scaleId } : {}),
     }

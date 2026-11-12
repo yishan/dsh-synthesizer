@@ -1,0 +1,5 @@
+# dsh-synthesizer: multi-track browser synth for the DSH web shell.
+# Installed with `dsh plugin --profile <profile> add <this package>`.
+- insert:
+    - id: dsh-synthesizer
+      name: dsh-synthesizer

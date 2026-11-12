@@ -1,0 +1,37 @@
+# dsh-synthesizer
+
+DeepSeek Harness 里的多轨合成器与口袋律动工作站（Groovebox）。在钢琴卷帘或 8 件套鼓机步进器上编曲，通过实时 Web Audio 减法合成器塑形音色并循环播放。切回对话后音乐在后台继续播放，侧栏底部可随时播放/暂停与静音。工程连同音色参数保存在当前 profile 的 `storages/dsh-synthesizer/projects/`。
+
+## 界面
+
+页面分三层：顶栏（播放、速度、小节、工程）、左侧音轨列表、右侧当前音轨的网格。网格下方的抽屉有三个标签：
+
+- **音色**：8 款音色预设和明亮度、咬字、厚度、空间四个宏旋钮；"全部参数"里是波形、失谐、低八度、过载、滤波器和 ADSR。鼓轨在这里是 8 个鼓件的试听垫。
+- **编曲**：调式高亮、一键生成乐句（鼓轨 5 种节奏，旋律轨 5 种乐句）、升降八度、清空本轨。
+- **弹奏**：双八度屏幕琴键。先点一下网格，再用电脑键盘 `A–L` 弹奏，`Z/X` 切八度；打开"边弹边录"后，播放时弹的音会量化记入当前音轨。
+
+顶栏"新建"菜单里有空白工程、5 首示范曲和随机生成。当前工程改动过时，示范曲会开成新工程，不会覆盖原作品。所有编辑都可以用 `⌘Z / Ctrl+Z` 撤销。
+
+颜色跟随宿主的 `--dsw-alias-*` 主题变量，亮色和暗色主题都适配；样式集中在 `src/client/styles.ts`。
+
+## 合成引擎
+
+每条合成音轨是一个减法合成器：波形（锯齿/方波/三角/正弦）、齐奏失谐、低八度振荡器、过载、低通滤波器（截止、共鸣、包络扫频）、ADSR 包络和随速度同步的附点八分回声，主总线上有压缩限幅器。鼓轨是 8 件套电子鼓（底鼓 C2、边击 C#2、军鼓 D2、拍手 D#2、闭镲 F#2、通鼓 A2、开镲 A#2、吊镲 C#3）。
+
+## 安装
+
+```bash
+npm install
+npm run build
+dsh plugin --profile <profile> add /path/to/dsh-synthesizer
+```
+
+Host 的 Fetch 路由只投递精确的 `GET` 和 `POST`。列出和读取是 `GET /api/dsh-synthesizer/projects`（带 `?id=` 时读一个工程），保存是 `POST` 同一路径，删除是 `POST /api/dsh-synthesizer/projects/delete`。
+
+## 开发
+
+```bash
+npm test
+npm run typecheck
+npm run build
+```

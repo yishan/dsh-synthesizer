@@ -4,6 +4,8 @@ import {
   BEATS_PER_BAR,
   ID_PATTERN,
   KIT_PATTERN,
+  LFO_TARGETS,
+  MAX_SWING,
   MAX_BARS,
   MAX_LOOP_BEATS,
   MAX_NOTES_PER_TRACK,
@@ -29,6 +31,10 @@ export const synthPatchSchema = z.strictObject({
   release: z.number().min(0.01).max(3),
   delayMix: z.number().min(0).max(0.8),
   drive: z.number().min(0).max(1),
+  reverbMix: z.number().min(0).max(0.8).optional(),
+  lfoTarget: z.enum(LFO_TARGETS).optional(),
+  lfoRate: z.number().min(0.1).max(20).optional(),
+  lfoDepth: z.number().min(0).max(1).optional(),
 })
 
 export const noteSchema = z.strictObject({
@@ -59,6 +65,7 @@ export const projectSchema = z.strictObject({
   beatsPerBar: z.literal(BEATS_PER_BAR),
   bars: z.number().int().min(1).max(MAX_BARS),
   loop: z.boolean(),
+  swing: z.number().min(0).max(MAX_SWING).optional(),
   scaleRoot: z.number().int().min(0).max(11).optional(),
   scaleId: z.string().min(1).max(32).optional(),
   tracks: z.array(trackSchema).min(1).max(MAX_TRACKS),

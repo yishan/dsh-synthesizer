@@ -31,6 +31,7 @@ const MELODIC_ROW = 22
 const DRUM_ROW = 32
 const KEY_LABEL_WIDTH = 72
 const RULER_HEIGHT = 24
+const VELOCITY_HEIGHT = 44
 const NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B']
 const BLACK_SEMITONES = new Set([1, 3, 6, 8, 10])
 const DRUM_KEY_HINTS: Record<number, string> = { 36: 'A', 37: 'W', 38: 'S', 39: 'E', 42: 'T', 45: 'H', 46: 'U', 49: 'O' }
@@ -77,6 +78,7 @@ export function PianoRoll({ track, bars, playing }: { track: Track; bars: number
   const [activeKeyPitch, setActiveKeyPitch] = useState<number | null>(null)
   const [tab, setTab] = useState<DrawerTab>('sound')
   const [drawerOpen, setDrawerOpen] = useState(true)
+  const [velocityDrag, setVelocityDrag] = useState(false)
 
   const drums = track.instrumentId === 'drums'
   const rowHeight = drums ? DRUM_ROW : MELODIC_ROW
@@ -128,6 +130,26 @@ export function PianoRoll({ track, bars, playing }: { track: Track; bars: number
     window.addEventListener('mouseup', onWindowUp)
     return () => { window.removeEventListener('mouseup', onWindowUp) }
   }, [drag, drums, engine, store, track.id])
+
+  // Velocity lane: one bar per step that has notes; a chord shares its bar.
+  const stepVelocity = new Map<number, number>()
+  for (const note of track.notes) {
+    const step = Math.round(note.startBeat / STEP_BEATS)
+    stepVelocity.set(step, Math.max(stepVelocity.get(step) ?? 0, note.velocity))
+  }
+  const editVelocity = (event: React.MouseEvent<HTMLDivElement>): void => {
+    const bounds = event.currentTarget.getBoundingClientRect()
+    const step = Math.floor((event.clientX - bounds.left) / CELL)
+    if (!stepVelocity.has(step)) return
+    const level = 1 - (event.clientY - bounds.top) / bounds.height
+    store.setStepVelocity(track.id, step * STEP_BEATS, Math.round(level * 127))
+  }
+  useEffect(() => {
+    if (!velocityDrag) return
+    const stop = (): void => { setVelocityDrag(false) }
+    window.addEventListener('mouseup', stop)
+    return () => { window.removeEventListener('mouseup', stop) }
+  }, [velocityDrag])
 
   const ghostNotes: Note[] = (!drums && state.showGhostNotes)
     ? state.project.tracks
@@ -299,7 +321,7 @@ export function PianoRoll({ track, bars, playing }: { track: Track; bars: number
                     <div
                       key={`${note.startBeat}:${note.durationBeats}`}
                       className="dsyn-note"
-                      style={noteBox(note.startBeat, note.durationBeats)}
+                      style={{ ...noteBox(note.startBeat, note.durationBeats), opacity: 0.4 + 0.6 * (note.velocity / 127) }}
                     />
                   ))}
                   {draft !== null ? <div className="dsyn-note is-draft" style={draft} /> : null}
@@ -307,6 +329,34 @@ export function PianoRoll({ track, bars, playing }: { track: Track; bars: number
               </div>
             )
           })}
+
+          <div className="dsyn-velocity" style={{ height: VELOCITY_HEIGHT }}>
+            <div className="dsyn-key" style={{ width: KEY_LABEL_WIDTH, flex: `0 0 ${KEY_LABEL_WIDTH}px`, cursor: 'default' }}>
+              力度
+            </div>
+            <div
+              role="group"
+              aria-label="力度"
+              title="上下拖动调整这一步的力度"
+              className="dsyn-velocity-lane"
+              style={{ width: steps * CELL, backgroundSize: `${CELL * 16}px 100%, ${CELL * 4}px 100%` }}
+              onMouseDown={(event) => {
+                if (event.button !== 0) return
+                setVelocityDrag(true)
+                editVelocity(event)
+              }}
+              onMouseMove={(event) => { if (velocityDrag) editVelocity(event) }}
+            >
+              {[...stepVelocity].map(([step, velocity]) => (
+                <div
+                  key={step}
+                  className="dsyn-velocity-bar"
+                  title={`力度 ${velocity}`}
+                  style={{ left: step * CELL + 3, width: CELL - 6, height: `${(velocity / 127) * 100}%` }}
+                />
+              ))}
+            </div>
+          </div>
         </div>
       </div>
 

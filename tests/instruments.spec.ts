@@ -214,4 +214,19 @@ describe('instruments', () => {
     voice.stop(0.1)
     expect(stops).toHaveLength(0)
   })
+
+  it('adds one LFO oscillator per voice when the patch asks for it', () => {
+    const base = DEFAULT_SYNTH_PATCHES.lead
+    if (base === undefined) throw new Error('lead patch missing')
+    const oscillators = (patch: typeof base): number => {
+      const fake = fakeContext()
+      getInstrument('lead').noteOn(fake.ctx, {} as AudioNode, 0, 60, 100, patch).stop(0.5)
+      return fake.created.filter((node) => node.kind === 'osc').length
+    }
+    const dry = oscillators(base)
+    for (const lfoTarget of ['pitch', 'filter', 'amp'] as const) {
+      expect(oscillators({ ...base, lfoTarget, lfoRate: 5, lfoDepth: 0.5 }), lfoTarget).toBe(dry + 1)
+    }
+    expect(oscillators({ ...base, lfoTarget: 'pitch', lfoRate: 5, lfoDepth: 0 })).toBe(dry)
+  })
 })

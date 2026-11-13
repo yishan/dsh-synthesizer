@@ -4,6 +4,7 @@ import {
   coerceProject,
   createDefaultProject,
   createProjectId,
+  MAX_SWING,
   MAX_TRACKS,
   removeNoteAt,
   sanitizeProject,
@@ -275,6 +276,21 @@ export class ProjectClient {
     if (!Number.isFinite(bars)) return
     const clamped = Math.max(1, Math.min(32, Math.round(bars)))
     this.commit(clipToBars({ ...this.state.project, bars: clamped }))
+  }
+
+  /** Swing as a fraction of a sixteenth, 0..MAX_SWING. */
+  setSwing(swing: number): void {
+    if (!Number.isFinite(swing)) return
+    this.commit({ ...this.state.project, swing: Math.max(0, Math.min(MAX_SWING, swing)) }, 'swing')
+  }
+
+  /** Set the velocity of every note of a track that starts on one step (a chord moves together). */
+  setStepVelocity(trackId: string, startBeat: number, velocity: number): void {
+    const next = Math.max(1, Math.min(127, Math.round(velocity)))
+    this.mapTrack(trackId, (track) => ({
+      ...track,
+      notes: track.notes.map((note) => Math.abs(note.startBeat - startBeat) < 1e-6 ? { ...note, velocity: next } : note),
+    }), `velocity:${trackId}`)
   }
 
   setLoop(loop: boolean): void {

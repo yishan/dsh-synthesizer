@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { createDefaultProject, type Note, type Project, type Track } from '../src/schema.ts'
 import { registerInstrument, unregisterInstrument, type Instrument } from '../src/client/instruments.ts'
-import { advanceScheduler, initialSchedulerState, playEvents, type ScheduleEvent } from '../src/client/scheduler.ts'
+import { advanceScheduler, initialSchedulerState, playEvents, swingOffset, type ScheduleEvent } from '../src/client/scheduler.ts'
 
 const note: Note = { pitch: 60, startBeat: 0, durationBeats: 0.25, velocity: 100 }
 
@@ -70,5 +70,22 @@ describe('scheduler', () => {
       stopTime: 0.2,
     }
     expect(() => playEvents([missing], {} as AudioContext, () => ({}) as AudioNode)).toThrow(/unknown_instrument:missing/)
+  })
+
+  it('swings every second sixteenth late without moving where it ends', () => {
+    expect(swingOffset(0, 0.5)).toBe(0)
+    expect(swingOffset(0.25, 0.5)).toBe(0.125)
+    expect(swingOffset(0.5, 0.5)).toBe(0)
+    expect(swingOffset(0.75, undefined)).toBe(0)
+
+    const notes: Note[] = [0, 0.25, 0.5, 0.75].map((startBeat) => ({ ...note, startBeat }))
+    const straight = withTracks('swing', [track('lead', 'lead', notes)], 1)
+    const swung = { ...straight, swing: 0.4 }
+    // 120 BPM: a beat is half a second.
+    const times = (project: Project): Array<[number, number]> =>
+      advanceScheduler(initialSchedulerState(0, project), 0, 0.5, project, true).events
+        .map((event) => [Number(event.time.toFixed(4)), Number(event.stopTime.toFixed(4))])
+    expect(times(straight)).toEqual([[0, 0.125], [0.125, 0.25], [0.25, 0.375], [0.375, 0.5]])
+    expect(times(swung)).toEqual([[0, 0.125], [0.175, 0.25], [0.25, 0.375], [0.425, 0.5]])
   })
 })

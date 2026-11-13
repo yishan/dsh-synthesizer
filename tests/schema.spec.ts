@@ -164,4 +164,32 @@ describe('project schema', () => {
     expect(sanitizeProject({ ...project, tracks: [{ ...drums, kit: '../x' }] }).tracks[0]?.kit).toBeUndefined()
     expect(projectSchema.safeParse({ ...project, tracks: [{ ...drums, kit: 'bad kit!' }] }).success).toBe(false)
   })
+
+  it('accepts swing, reverb, and a complete LFO, and drops an LFO that does nothing', () => {
+    const project = createDefaultProject('fx')
+    const [, bass] = project.tracks
+    if (bass === undefined) throw new Error('default tracks missing')
+    const patch = {
+      waveform: 'sawtooth' as const, detune: 0, subMix: 0, cutoff: 800, resonance: 1, envMod: 0,
+      attack: 0.01, decay: 0.1, sustain: 0.5, release: 0.1, delayMix: 0, drive: 0,
+    }
+    const full = sanitizeProject({
+      ...project,
+      swing: 0.9,
+      tracks: [{ ...bass, synth: { ...patch, reverbMix: 2, lfoTarget: 'filter', lfoRate: 99, lfoDepth: 0.5 } }],
+    })
+    expect(full.swing).toBe(0.6)
+    expect(full.tracks[0]?.synth).toMatchObject({ reverbMix: 0.8, lfoTarget: 'filter', lfoRate: 20, lfoDepth: 0.5 })
+    expect(projectSchema.safeParse(full).success).toBe(true)
+
+    const idle = sanitizeProject({
+      ...project,
+      swing: 0,
+      tracks: [{ ...bass, synth: { ...patch, reverbMix: 0, lfoTarget: 'pitch', lfoRate: 5, lfoDepth: 0 } }],
+    })
+    expect(idle.swing).toBeUndefined()
+    expect(idle.tracks[0]?.synth).toEqual(patch)
+    // A project saved before these fields existed is still valid.
+    expect(projectSchema.safeParse({ ...project, tracks: [{ ...bass, synth: patch }] }).success).toBe(true)
+  })
 })

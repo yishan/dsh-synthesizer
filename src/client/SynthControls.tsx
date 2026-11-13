@@ -25,6 +25,13 @@ const DRUM_KEY_HINTS: Record<number, string> = {
   49: 'O',
 }
 
+const LFO_CHOICES = [
+  { id: 'off', label: '关', hint: '不使用 LFO' },
+  { id: 'pitch', label: '音高', hint: '颤音' },
+  { id: 'filter', label: '滤波', hint: '明暗来回扫动' },
+  { id: 'amp', label: '音量', hint: '震音' },
+] as const
+
 const MELODIC_INSTRUMENTS = ['lead', 'bass', 'pad', 'keys', 'acid', 'pluck', 'chip', 'bell'] as const
 
 /** Convert cutoff (80..12000Hz) to perceptual 0..100 Brightness macro. */
@@ -106,6 +113,7 @@ export function SynthControls({ track, playing }: { track: Track; playing: boole
   const auditionPitch = track.instrumentId === 'bass' || track.instrumentId === 'acid' ? 45 : 60
 
   const presets = presetsFor(track.instrumentId)
+  const lfoTarget = patch.lfoTarget !== undefined && (patch.lfoDepth ?? 0) > 0 ? patch.lfoTarget : 'off'
 
   // Four macro values (0..100) derived from the patch.
   const brightness = cutoffToBrightness(patch.cutoff)
@@ -255,6 +263,43 @@ export function SynthControls({ track, playing }: { track: Track; playing: boole
             <Param label="衰减" value={Number(patch.decay.toFixed(2))} min={0.02} max={1.2} step={0.02} unit=" s" onChange={(v) => { setPatch({ decay: v }) }} />
             <Param label="延音" value={Math.round(patch.sustain * 100)} min={0} max={100} step={1} unit="%" onChange={(v) => { setPatch({ sustain: v / 100 }) }} />
             <Param label="释音" value={Number(patch.release.toFixed(2))} min={0.02} max={1.5} step={0.02} unit=" s" onChange={(v) => { setPatch({ release: v }) }} />
+          </div>
+          <div className="dsyn-module">
+            <div className="dsyn-module-title">
+              <span>LFO</span>
+              <div className="dsyn-seg" role="tablist" aria-label="LFO 作用对象">
+                {LFO_CHOICES.map((choice) => (
+                  <button
+                    key={choice.id}
+                    type="button"
+                    role="tab"
+                    aria-selected={lfoTarget === choice.id}
+                    title={choice.hint}
+                    onClick={() => {
+                      setPatch(choice.id === 'off'
+                        ? { lfoTarget: undefined, lfoRate: undefined, lfoDepth: undefined }
+                        : { lfoTarget: choice.id, lfoRate: patch.lfoRate ?? 5, lfoDepth: patch.lfoDepth ?? 0.3 })
+                    }}
+                    style={{ height: 20, padding: '0 8px', fontSize: 11 }}
+                  >
+                    {choice.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+            {lfoTarget === 'off' ? (
+              <span className="dsyn-caption">选择音高、滤波或音量，让它周期性地变化</span>
+            ) : (
+              <>
+                <Param label="速率" value={Number((patch.lfoRate ?? 5).toFixed(1))} min={0.1} max={12} step={0.1} unit=" Hz" onChange={(v) => { setPatch({ lfoRate: v }) }} />
+                <Param label="深度" value={Math.round((patch.lfoDepth ?? 0) * 100)} min={1} max={100} step={1} unit="%" onChange={(v) => { setPatch({ lfoDepth: v / 100 }) }} />
+              </>
+            )}
+          </div>
+          <div className="dsyn-module">
+            <div className="dsyn-module-title"><span>效果</span></div>
+            <Param label="回声" value={Math.round((patch.delayMix / 0.8) * 100)} min={0} max={100} step={1} unit="%" onChange={(v) => { setPatch({ delayMix: Number(((v / 100) * 0.8).toFixed(2)) }) }} />
+            <Param label="混响" value={Math.round(((patch.reverbMix ?? 0) / 0.8) * 100)} min={0} max={100} step={1} unit="%" onChange={(v) => { setPatch({ reverbMix: Number(((v / 100) * 0.8).toFixed(2)) }) }} />
           </div>
         </div>
       ) : null}

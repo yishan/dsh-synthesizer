@@ -74,11 +74,11 @@ const EXTRA_SYNTH_PRESETS: readonly SynthPresetItem[] = [
     patch: patch('sawtooth', 0, 0.25, 500, 3, 0.7, 0.002, 0.16, 0.2, 0.1, 0, 0.2) },
   // Pad
   { id: 'pad-strings', instrumentId: 'pad', label: '弦乐', description: '慢起音的失谐锯齿合奏',
-    patch: patch('sawtooth', 14, 0, 3800, 0.8, 0.1, 0.35, 0.5, 0.85, 0.9, 0.2, 0) },
+    patch: { ...patch('sawtooth', 14, 0, 3800, 0.8, 0.1, 0.35, 0.5, 0.85, 0.9, 0.2, 0), reverbMix: 0.3 } },
   { id: 'pad-dark', instrumentId: 'pad', label: '暗色铺底', description: '低沉、缓慢的三角波铺底',
-    patch: patch('triangle', 10, 0.4, 900, 1, 0.2, 0.6, 0.8, 0.8, 1.4, 0.3, 0) },
+    patch: { ...patch('triangle', 10, 0.4, 900, 1, 0.2, 0.6, 0.8, 0.8, 1.4, 0.3, 0), reverbMix: 0.4 } },
   { id: 'pad-glass', instrumentId: 'pad', label: '玻璃铺底', description: '带共鸣的方波，尾音长而通透',
-    patch: patch('square', 8, 0, 5200, 2.5, 0.3, 0.25, 0.6, 0.6, 1.2, 0.45, 0) },
+    patch: { ...patch('square', 8, 0, 5200, 2.5, 0.3, 0.25, 0.6, 0.6, 1.2, 0.45, 0), reverbMix: 0.35 } },
   // Keys
   { id: 'keys-organ', instrumentId: 'keys', label: '风琴', description: '持续不衰减的正弦加低八度',
     patch: patch('sine', 4, 0.6, 5000, 0.7, 0, 0.005, 0.05, 1, 0.08, 0.1, 0.2) },
@@ -95,7 +95,7 @@ const EXTRA_SYNTH_PRESETS: readonly SynthPresetItem[] = [
   { id: 'pluck-muted', instrumentId: 'pluck', label: '闷音拨弦', description: '很短的闷音，适合切分节奏',
     patch: patch('sawtooth', 0, 0, 900, 2, 0.6, 0.002, 0.09, 0, 0.08, 0.2, 0) },
   { id: 'pluck-harp', instrumentId: 'pluck', label: '竖琴', description: '三角波长衰减拨弦',
-    patch: patch('triangle', 3, 0, 4200, 1, 0.3, 0.003, 0.5, 0, 0.6, 0.35, 0) },
+    patch: { ...patch('triangle', 3, 0, 4200, 1, 0.3, 0.003, 0.5, 0, 0.6, 0.35, 0), reverbMix: 0.3 } },
   // Chip
   { id: 'chip-triangle', instrumentId: 'chip', label: '三角波', description: '红白机的三角波声道，常用作贝斯',
     patch: patch('triangle', 0, 0, 12000, 0.7, 0, 0.002, 0.05, 1, 0.03, 0, 0) },
@@ -103,9 +103,22 @@ const EXTRA_SYNTH_PRESETS: readonly SynthPresetItem[] = [
     patch: patch('square', 9, 0, 9000, 0.7, 0, 0.002, 0.08, 0.5, 0.06, 0.25, 0) },
   // Bell
   { id: 'bell-box', instrumentId: 'bell', label: '音乐盒', description: '纯正弦短音，像八音盒',
-    patch: patch('sine', 0, 0, 8000, 1, 0.2, 0.002, 0.6, 0, 0.8, 0.3, 0) },
+    patch: { ...patch('sine', 0, 0, 8000, 1, 0.2, 0.002, 0.6, 0, 0.8, 0.3, 0), reverbMix: 0.35 } },
   { id: 'bell-glass', instrumentId: 'bell', label: '玻璃铃', description: '大失谐三角波，金属感长尾',
-    patch: patch('triangle', 18, 0, 7000, 5, 0.4, 0.002, 0.9, 0, 1.2, 0.5, 0) },
+    patch: { ...patch('triangle', 18, 0, 7000, 5, 0.4, 0.002, 0.9, 0, 1.2, 0.5, 0), reverbMix: 0.4 } },
+  // Sounds that need the LFO
+  { id: 'lead-vibrato', instrumentId: 'lead', label: '颤音主音', description: '带颤音的锯齿主音，长音更有歌唱感',
+    patch: { ...patch('sawtooth', 8, 0.1, 4600, 2, 0.4, 0.01, 0.2, 0.7, 0.2, 0.25, 0.15),
+      lfoTarget: 'pitch', lfoRate: 5.5, lfoDepth: 0.18 } },
+  { id: 'bass-wobble', instrumentId: 'bass', label: 'Wobble', description: '滤波器被 LFO 来回扫动的摇摆贝斯',
+    patch: { ...patch('sawtooth', 8, 0.4, 500, 6, 0.2, 0.005, 0.2, 0.9, 0.15, 0, 0.35),
+      lfoTarget: 'filter', lfoRate: 4, lfoDepth: 0.85 } },
+  { id: 'pad-breath', instrumentId: 'pad', label: '呼吸铺底', description: '音量缓慢起伏、带混响的铺底',
+    patch: { ...patch('triangle', 12, 0.2, 2400, 1, 0.1, 0.5, 0.6, 0.85, 1.3, 0.2, 0),
+      reverbMix: 0.35, lfoTarget: 'amp', lfoRate: 0.35, lfoDepth: 0.6 } },
+  { id: 'keys-tremolo', instrumentId: 'keys', label: '震音电钢', description: '音量快速颤动的电钢，老式音箱的味道',
+    patch: { ...patch('triangle', 4, 0.15, 2200, 1, 0.3, 0.004, 0.6, 0.4, 0.4, 0.1, 0),
+      reverbMix: 0.15, lfoTarget: 'amp', lfoRate: 5.2, lfoDepth: 0.55 } },
 ]
 
 /** The patch of a preset by id. */
@@ -126,8 +139,16 @@ const PATCH_KEYS = [
 
 /** True when a track's patch is exactly this preset, i.e. it has not been tweaked since. */
 export function isPreset(current: SynthPatch, preset: SynthPresetItem): boolean {
-  if (current.waveform !== preset.patch.waveform) return false
-  return PATCH_KEYS.every((key) => Math.abs(current[key] - preset.patch[key]) < 1e-6)
+  const target = preset.patch
+  if (current.waveform !== target.waveform) return false
+  if (!PATCH_KEYS.every((key) => Math.abs(current[key] - target[key]) < 1e-6)) return false
+  if (Math.abs((current.reverbMix ?? 0) - (target.reverbMix ?? 0)) > 1e-6) return false
+  const lfoOn = (patch: SynthPatch): boolean => patch.lfoTarget !== undefined && (patch.lfoDepth ?? 0) > 0
+  if (lfoOn(current) !== lfoOn(target)) return false
+  if (!lfoOn(current)) return true
+  return current.lfoTarget === target.lfoTarget
+    && Math.abs((current.lfoRate ?? 0) - (target.lfoRate ?? 0)) < 1e-6
+    && Math.abs((current.lfoDepth ?? 0) - (target.lfoDepth ?? 0)) < 1e-6
 }
 
 export const SYNTH_PATCH_PRESETS: readonly SynthPresetItem[] = [

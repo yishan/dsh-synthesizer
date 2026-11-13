@@ -159,6 +159,7 @@ export async function saveProject(project: Project, options: { keepalive?: boole
     return await postProject(clean, keepalive)
   } catch (error) {
     const hasNewFields = clean.scaleRoot !== undefined
+      || clean.swing !== undefined
       || clean.scaleId !== undefined
       || clean.tracks.some((track) => track.synth !== undefined || track.kit !== undefined)
     if (!hasNewFields || !(error instanceof Error) || error.message !== 'invalid_project') throw error
@@ -170,6 +171,7 @@ export async function saveProject(project: Project, options: { keepalive?: boole
         const kit = kits.get(track.id)
         return kit !== undefined ? { ...track, kit } : track
       }),
+      ...(clean.swing !== undefined ? { swing: clean.swing } : {}),
       ...(clean.scaleRoot !== undefined ? { scaleRoot: clean.scaleRoot } : {}),
       ...(clean.scaleId !== undefined ? { scaleId: clean.scaleId } : {}),
     }

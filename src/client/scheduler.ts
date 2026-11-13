@@ -1,6 +1,6 @@
 /** Lookahead scheduler. Timing uses the audio clock, not the timer that polls it. */
 import { getInstrument, type Instrument, type ScheduledNote } from './instruments.ts'
-import type { Project, SynthPatch } from '../model.ts'
+import { STEP_BEATS, type Project, type SynthPatch } from '../model.ts'
 
 export interface SchedulerState {
   origin: number
@@ -35,6 +35,16 @@ export function initialSchedulerState(now: number, project: Project): SchedulerS
   return { origin: now, scheduledUntilBeat: 0, signature: schedulerSignature(project) }
 }
 
+/**
+ * How late, in beats, a note starting at `startBeat` plays under `swing`.
+ * Only the second and fourth sixteenth of each beat move.
+ */
+export function swingOffset(startBeat: number, swing: number | undefined): number {
+  if (swing === undefined || swing <= 0) return 0
+  const step = Math.round(startBeat / STEP_BEATS)
+  return step % 2 === 1 ? swing * STEP_BEATS : 0
+}
+
 function collect(
   project: Project,
   origin: number,
@@ -57,7 +67,8 @@ function collect(
       for (const note of track.notes) {
         if (note.startBeat < windowStart || note.startBeat >= windowEnd) continue
         const beat = loopStart + note.startBeat
-        const time = origin + beat * secondsPerBeat
+        // Swing delays the start only; the note still ends where it was drawn to end.
+        const time = origin + (beat + swingOffset(note.startBeat, project.swing)) * secondsPerBeat
         events.push({
           key: `${loop}:${track.id}:${note.pitch}:${note.startBeat}`,
           trackId: track.id,
@@ -68,7 +79,7 @@ function collect(
           synth: track.synth,
           kit: track.kit,
           time,
-          stopTime: time + note.durationBeats * secondsPerBeat,
+          stopTime: origin + (beat + note.durationBeats) * secondsPerBeat,
         })
       }
     }

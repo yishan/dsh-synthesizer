@@ -30,6 +30,7 @@ function installHost(options: { strictV1?: boolean } = {}): { saved: Map<string,
       const project = JSON.parse(String(init.body)) as Project
       posts.push(project)
       const hasNewFields = project.scaleRoot !== undefined
+        || project.swing !== undefined
         || project.tracks.some((track) => track.synth !== undefined || track.kit !== undefined)
       if (options.strictV1 === true && hasNewFields) {
         return Response.json({ ok: false, error: 'invalid_project' }, { status: 400 })
@@ -320,5 +321,38 @@ describe('project client', () => {
     client.updateTrack(added.id, { name: '我的铃' })
     client.updateTrack(added.id, { instrumentId: 'pad' })
     expect(names().at(-1)).toBe('我的铃')
+  })
+
+  it('saves swing, and edits the velocity of a whole step as one undo step', async () => {
+    const host = installHost()
+    const client = new ProjectClient()
+    await client.hydrate()
+    const id = client.getState().project.id
+    client.setSwing(0.33)
+    await vi.advanceTimersByTimeAsync(1000)
+    expect(host.saved.get(id)?.swing).toBe(0.33)
+
+    const target = client.getState().project.tracks[1]
+    if (target === undefined) throw new Error('starter track missing')
+    client.setTrackNotes(target.id, [
+      { pitch: 48, startBeat: 0, durationBeats: 1, velocity: 100 },
+      { pitch: 55, startBeat: 0, durationBeats: 1, velocity: 90 },
+      { pitch: 50, startBeat: 1, durationBeats: 1, velocity: 100 },
+    ])
+    const velocities = (): number[] => client.getState().project.tracks[1]?.notes.map((note) => note.velocity) ?? []
+    client.setStepVelocity(target.id, 0, 70)
+    client.setStepVelocity(target.id, 0, 60)
+    client.setStepVelocity(target.id, 0, 500)
+    expect(velocities()).toEqual([127, 127, 100])
+    client.undo()
+    expect(velocities()).toEqual([100, 90, 100])
+
+    const old = installHost({ strictV1: true })
+    const legacy = new ProjectClient()
+    await legacy.hydrate()
+    legacy.setSwing(0.2)
+    await vi.advanceTimersByTimeAsync(1000)
+    expect(old.saved.get(legacy.getState().project.id)?.swing).toBeUndefined()
+    expect(legacy.getState().project.swing).toBe(0.2)
   })
 })

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { MAX_TRACKS } from '../model.ts'
+import { MAX_SWING, MAX_TRACKS } from '../model.ts'
 import { getEngine } from './engine.ts'
 import { Icon } from './icons.tsx'
 import { INSTRUMENT_LABELS, listInstruments } from './instruments.ts'
@@ -23,6 +23,7 @@ const ERRORS: Record<string, string> = {
   load_failed: '读取工程失败，请稍后重试',
   save_failed: '保存工程失败，请稍后重试',
   invalid_import: '这个文件不是合成器工程，无法导入',
+  render_unavailable: '当前环境不支持离线渲染音频',
 }
 
 /** Turn a store error code or a raw fetch failure into a sentence the user can act on. */
@@ -99,6 +100,17 @@ export function Editor(): JSX.Element {
           <label className="dsyn-label">
             小节
             <NumberField ariaLabel="小节数" min={1} max={32} value={project.bars} width={48} onCommit={(value) => { store.setBars(value) }} />
+          </label>
+          <label className="dsyn-label" title="把每拍里第二、第四个十六分音符往后推。33 是三连音的摇摆感">
+            摇摆
+            <NumberField
+              ariaLabel="摇摆"
+              min={0}
+              max={Math.round(MAX_SWING * 100)}
+              value={Math.round((project.swing ?? 0) * 100)}
+              width={48}
+              onCommit={(value) => { store.setSwing(value / 100) }}
+            />
           </label>
           <button
             type="button"

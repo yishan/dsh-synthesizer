@@ -1,10 +1,13 @@
 import { useRef, useState } from 'react'
 import { MAX_PROJECTS, type Project } from '../model.ts'
 import type { ProjectSummary } from './api.ts'
+import { downloadFile, safeFileName } from './download.ts'
 import { getEngine } from './engine.ts'
 import { Icon } from './icons.tsx'
+import { projectToMidi } from './midi.ts'
 import { SONG_PRESETS } from './presets.ts'
 import { getProjectStore, type SessionState } from './project-store.ts'
+import { encodeWav, renderProject } from './render.ts'
 
 const SEARCH_THRESHOLD = 8
 
@@ -34,16 +37,8 @@ function describe(item: ProjectSummary): string {
   return parts.join(' · ')
 }
 
-function download(project: Project): void {
-  const blob = new Blob([JSON.stringify(project, null, 2)], { type: 'application/json' })
-  const url = URL.createObjectURL(blob)
-  const link = document.createElement('a')
-  link.href = url
-  link.download = `${project.name.replace(/[\\/:*?"<>|]/g, '_')}.dsh-synth.json`
-  document.body.appendChild(link)
-  link.click()
-  link.remove()
-  setTimeout(() => { URL.revokeObjectURL(url) }, 1000)
+function downloadProject(project: Project): void {
+  downloadFile(JSON.stringify(project, null, 2), 'application/json', `${safeFileName(project.name)}.dsh-synth.json`)
 }
 
 /**
@@ -63,6 +58,7 @@ export function ProjectPanel({
   const [query, setQuery] = useState('')
   const [renaming, setRenaming] = useState<{ id: string; name: string } | null>(null)
   const fileInput = useRef<HTMLInputElement>(null)
+  const [rendering, setRendering] = useState(false)
 
   const currentId = state.project.id
   const all = state.projects.some((item) => item.id === currentId)
@@ -149,7 +145,7 @@ export function ProjectPanel({
                   <RowAction
                     label="导出为文件"
                     icon="download"
-                    onClick={() => { void run(async () => { download(await store.exportProject(item.id)) }) }}
+                    onClick={() => { void run(async () => { downloadProject(await store.exportProject(item.id)) }) }}
                   />
                   <RowAction
                     label="删除"
@@ -206,6 +202,43 @@ export function ProjectPanel({
           }}
         >
           随机生成
+        </button>
+      </div>
+
+      <div className="dsyn-menu-rule" />
+      <div className="dsyn-menu-title">导出当前工程</div>
+      <div className="dsyn-project-new">
+        <button
+          type="button"
+          className="dsyn-btn is-small"
+          title="标准 MIDI 文件，每条音轨一轨，可以拖进其他音乐软件"
+          onClick={() => {
+            void run(async () => {
+              const project = await store.exportProject(currentId)
+              downloadFile(projectToMidi(project), 'audio/midi', `${safeFileName(project.name)}.mid`)
+            })
+          }}
+        >
+          MIDI
+        </button>
+        <button
+          type="button"
+          className="dsyn-btn is-small"
+          disabled={rendering}
+          title="把循环渲染一遍成音频文件，和播放听到的一致"
+          onClick={() => {
+            setRendering(true)
+            void run(async () => {
+              try {
+                const project = await store.exportProject(currentId)
+                downloadFile(encodeWav(await renderProject(project), 0.98), 'audio/wav', `${safeFileName(project.name)}.wav`)
+              } finally {
+                setRendering(false)
+              }
+            })
+          }}
+        >
+          {rendering ? '渲染中…' : '音频 WAV'}
         </button>
       </div>
 

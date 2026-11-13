@@ -249,6 +249,18 @@ const CSS = `
 .dsyn-note.is-ghost { top: 5px; bottom: 5px; background: var(--s-fg); opacity: 0.12; }
 .dsyn-note.is-draft { opacity: 0.55; }
 
+/* Velocity lane, pinned to the bottom of the grid */
+.dsyn-velocity { display: flex; position: sticky; bottom: 0; z-index: 4; background: var(--s-bg); border-top: 1px solid var(--s-line); }
+.dsyn-velocity .dsyn-key { border-bottom: 0; height: 100%; }
+.dsyn-velocity .dsyn-key:hover { background: var(--s-bg); }
+.dsyn-velocity-lane {
+  position: relative; cursor: ns-resize;
+  background-image:
+    linear-gradient(to right, var(--s-line-strong) 1px, transparent 1px),
+    linear-gradient(to right, var(--s-line) 1px, transparent 1px);
+}
+.dsyn-velocity-bar { position: absolute; bottom: 0; min-height: 2px; border-radius: 2px 2px 0 0; background: var(--s-track); pointer-events: none; }
+
 /* Drawer under the grid */
 .dsyn-drawer { border-top: 1px solid var(--s-line); display: flex; flex-direction: column; max-height: 46%; }
 .dsyn-tabs { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 6px 12px; }

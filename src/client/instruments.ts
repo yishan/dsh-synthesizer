@@ -11,6 +11,7 @@ import {
   DRUM_RIM,
   DRUM_SNARE,
   DRUM_TOM_LOW,
+  type LfoTarget,
   type SynthPatch,
 } from '../model.ts'
 
@@ -272,6 +273,7 @@ interface ToneOptions {
   resonance?: number
   envMod?: number
   drive?: number
+  lfo?: { target: LfoTarget; rate: number; depth: number }
 }
 
 /**
@@ -306,10 +308,12 @@ function tone(
   }
 
   let filter: BiquadFilterNode | undefined
+  let filterBaseHz = 0
   if (options.filterHz !== undefined) {
     filter = ctx.createBiquadFilter()
     filter.type = 'lowpass'
     const baseHz = Math.max(40, Math.min(16000, options.filterHz))
+    filterBaseHz = baseHz
     const modHz = options.envMod !== undefined && options.envMod > 0
       ? Math.min(16000, baseHz + options.envMod * 7200)
       : baseHz
@@ -350,7 +354,38 @@ function tone(
     oscillators.push(subOsc)
   }
 
-  gain.connect(out)
+  // LFO: one sine per voice, restarted with the note, routed to pitch, filter, or level.
+  let voiceOut: AudioNode = gain
+  const lfo = options.lfo
+  if (lfo !== undefined && lfo.depth > 0) {
+    const lfoOsc = ctx.createOscillator()
+    lfoOsc.type = 'sine'
+    lfoOsc.frequency.setValueAtTime(lfo.rate, time)
+    const lfoGain = ctx.createGain()
+    lfoOsc.connect(lfoGain)
+    if (lfo.target === 'pitch') {
+      // Up to a semitone either way.
+      lfoGain.gain.setValueAtTime(lfo.depth * 100, time)
+      for (const oscillator of oscillators) {
+        if (oscillator.detune !== undefined) lfoGain.connect(oscillator.detune)
+      }
+    } else if (lfo.target === 'filter' && filter !== undefined) {
+      // Sweeps the cutoff around its base value, never down to zero.
+      lfoGain.gain.setValueAtTime(lfo.depth * filterBaseHz * 0.9, time)
+      lfoGain.connect(filter.frequency)
+    } else if (lfo.target === 'amp') {
+      const tremolo = ctx.createGain()
+      tremolo.gain.setValueAtTime(1 - lfo.depth / 2, time)
+      lfoGain.gain.setValueAtTime(lfo.depth / 2, time)
+      lfoGain.connect(tremolo.gain)
+      gain.connect(tremolo)
+      voiceOut = tremolo
+    }
+    lfoOsc.start(time)
+    oscillators.push(lfoOsc)
+  }
+
+  voiceOut.connect(out)
   let scheduledStop: number | undefined
 
   return {
@@ -407,6 +442,9 @@ function patchToToneOptions(patch: SynthPatch): ToneOptions {
     resonance: patch.resonance,
     envMod: patch.envMod,
     drive: patch.drive,
+    ...(patch.lfoTarget !== undefined && patch.lfoDepth !== undefined && patch.lfoDepth > 0
+      ? { lfo: { target: patch.lfoTarget, rate: patch.lfoRate ?? 5, depth: patch.lfoDepth } }
+      : {}),
   }
 }
 

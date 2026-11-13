@@ -48,6 +48,11 @@ export const KIT_PATTERN = /^[A-Za-z0-9_-]{1,32}$/
 export const SYNTH_WAVEFORMS = ['sawtooth', 'square', 'triangle', 'sine'] as const
 export type SynthWaveform = (typeof SYNTH_WAVEFORMS)[number]
 
+export const LFO_TARGETS = ['pitch', 'filter', 'amp'] as const
+export type LfoTarget = (typeof LFO_TARGETS)[number]
+
+export const MAX_SWING = 0.6
+
 export interface SynthPatch {
   waveform: SynthWaveform
   detune: number
@@ -61,6 +66,12 @@ export interface SynthPatch {
   release: number
   delayMix: number
   drive: number
+  /** Reverb send, 0..0.8. Absent means dry. */
+  reverbMix?: number | undefined
+  /** Low-frequency oscillator: what it moves, how fast (Hz), and how far (0..1). Absent means off. */
+  lfoTarget?: LfoTarget | undefined
+  lfoRate?: number | undefined
+  lfoDepth?: number | undefined
 }
 
 export interface Note {
@@ -93,6 +104,11 @@ export interface Project {
   /** Scale used for grid shading and generated phrases: root pitch class 0..11 and a scale id. */
   scaleRoot?: number | undefined
   scaleId?: string | undefined
+  /**
+   * Swing, 0..MAX_SWING: how far every second sixteenth is pushed late, as a
+   * fraction of a sixteenth. 0.33 is a triplet shuffle. Absent means straight.
+   */
+  swing?: number | undefined
   tracks: Track[]
 }
 
@@ -170,6 +186,20 @@ function sanitizeSynthPatch(patch: SynthPatch): SynthPatch {
     release: clamp(patch.release, 0.01, 3),
     delayMix: clamp(patch.delayMix, 0, 0.8),
     drive: clamp(patch.drive, 0, 1),
+    ...(typeof patch.reverbMix === 'number' && patch.reverbMix > 0
+      ? { reverbMix: clamp(patch.reverbMix, 0, 0.8) }
+      : {}),
+    // The three LFO fields travel together; a target without depth is the same as off.
+    ...(patch.lfoTarget !== undefined
+      && LFO_TARGETS.includes(patch.lfoTarget)
+      && typeof patch.lfoDepth === 'number'
+      && patch.lfoDepth > 0
+      ? {
+          lfoTarget: patch.lfoTarget,
+          lfoRate: clamp(typeof patch.lfoRate === 'number' ? patch.lfoRate : 5, 0.1, 20),
+          lfoDepth: clamp(patch.lfoDepth, 0, 1),
+        }
+      : {}),
   }
 }
 
@@ -236,6 +266,9 @@ export function sanitizeProject(project: Project): Project {
     beatsPerBar: BEATS_PER_BAR,
     bars,
     loop: Boolean(project.loop),
+    ...(typeof project.swing === 'number' && project.swing > 0.005
+      ? { swing: Number(clamp(project.swing, 0, MAX_SWING).toFixed(2)) }
+      : {}),
     ...(scaleRoot !== undefined ? { scaleRoot } : {}),
     ...(scaleId !== undefined ? { scaleId } : {}),
     tracks: tracks.length > 0 ? tracks : createDefaultProject().tracks,
@@ -297,6 +330,7 @@ export function coerceProject(value: unknown): Project | null {
     beatsPerBar: BEATS_PER_BAR,
     bars: num(raw.bars, 4),
     loop: raw.loop !== false,
+    ...(typeof raw.swing === 'number' ? { swing: raw.swing } : {}),
     ...(typeof raw.scaleRoot === 'number' ? { scaleRoot: raw.scaleRoot } : {}),
     ...(typeof raw.scaleId === 'string' ? { scaleId: raw.scaleId } : {}),
     tracks,

@@ -4,6 +4,7 @@
  */
 import { STEP_BEATS, type SynthPatch } from '../model.ts'
 import { type ScheduledNote } from './instruments.ts'
+import { createMixGraph, type MixGraph } from './mix.ts'
 import { getProjectStore, type ProjectClient } from './project-store.ts'
 import {
   advanceScheduler,
@@ -21,18 +22,9 @@ interface LiveVoice {
   stopTime: number
 }
 
-interface TrackBus {
-  dry: GainNode
-  delaySend: GainNode
-}
-
 export class Engine {
   private audio: AudioContext | undefined
-  private master: GainNode | undefined
-  private analyser: AnalyserNode | undefined
-  private delayNode: DelayNode | undefined
-  private delayFeedback: GainNode | undefined
-  private outputs = new Map<string, TrackBus>()
+  private mix: MixGraph | undefined
   private voices: LiveVoice[] = []
   private previews = new Map<number, { voice: ScheduledNote; startedAtBeat: number | null; trackId: string }>()
   private cursor: SchedulerState | undefined
@@ -106,8 +98,9 @@ export class Engine {
   }
 
   readWaveform(target: Uint8Array<ArrayBuffer>): boolean {
-    if (this.analyser === undefined || !this.store.getState().playing) return false
-    this.analyser.getByteTimeDomainData(target)
+    const analyser = this.mix?.analyser
+    if (analyser === undefined || !this.store.getState().playing) return false
+    analyser.getByteTimeDomainData(target)
     return true
   }
 
@@ -194,11 +187,7 @@ export class Engine {
     this.pause(true)
     void this.audio?.close()
     this.audio = undefined
-    this.master = undefined
-    this.analyser = undefined
-    this.delayNode = undefined
-    this.delayFeedback = undefined
-    this.outputs.clear()
+    this.mix = undefined
   }
 
   private pause(restart: boolean): void {
@@ -254,81 +243,23 @@ export class Engine {
     if (Constructor === undefined) return undefined
     if (this.audio === undefined) {
       this.audio = new Constructor({ latencyHint: 'interactive' })
-      this.master = this.audio.createGain()
-
-      let postMaster: AudioNode = this.master
-      if (typeof this.audio.createDynamicsCompressor === 'function') {
-        const compressor = this.audio.createDynamicsCompressor()
-        compressor.threshold?.setValueAtTime(-10, this.audio.currentTime)
-        compressor.knee?.setValueAtTime(12, this.audio.currentTime)
-        compressor.ratio?.setValueAtTime(4, this.audio.currentTime)
-        compressor.attack?.setValueAtTime(0.005, this.audio.currentTime)
-        compressor.release?.setValueAtTime(0.16, this.audio.currentTime)
-        postMaster.connect(compressor)
-        postMaster = compressor
-      }
-
-      if (typeof this.audio.createAnalyser === 'function') {
-        this.analyser = this.audio.createAnalyser()
-        this.analyser.fftSize = 256
-        this.analyser.smoothingTimeConstant = 0.75
-        postMaster.connect(this.analyser)
-        postMaster = this.analyser
-      }
-
-      postMaster.connect(this.audio.destination)
-
-      if (typeof this.audio.createDelay === 'function') {
-        this.delayNode = this.audio.createDelay(2.0)
-        this.delayFeedback = this.audio.createGain()
-        this.delayFeedback.gain.setValueAtTime(0.34, this.audio.currentTime)
-        const delayTone = this.audio.createBiquadFilter()
-        delayTone.type = 'lowpass'
-        delayTone.frequency.setValueAtTime(2600, this.audio.currentTime)
-        this.delayNode.connect(delayTone)
-        delayTone.connect(this.delayFeedback)
-        this.delayFeedback.connect(this.delayNode)
-        delayTone.connect(this.master)
-      }
-
+      this.mix = createMixGraph(this.audio, this.audio.destination)
       this.applyMute()
     }
     return this.audio
   }
 
   private syncDelayTempo(bpm: number): void {
-    if (this.audio === undefined || this.delayNode === undefined) return
-    const dottedEighth = Math.max(0.08, Math.min(1.2, (60 / bpm) * 0.75))
-    this.delayNode.delayTime.setValueAtTime(dottedEighth, this.audio.currentTime)
+    this.mix?.setTempo(bpm)
   }
 
   private applyMute(): void {
-    const audio = this.audio
-    const master = this.master
-    if (audio === undefined || master === undefined) return
-    master.gain.setValueAtTime(this.store.getState().muted ? 0 : 0.9, audio.currentTime)
+    this.mix?.setMuted(this.store.getState().muted)
   }
 
   private outputFor(event: ScheduleEvent): GainNode {
-    const audio = this.audio
-    const master = this.master
-    if (audio === undefined || master === undefined) throw new Error('audio_unavailable')
-    let bus = this.outputs.get(event.trackId)
-    if (bus === undefined) {
-      const dry = audio.createGain()
-      const delaySend = audio.createGain()
-      dry.connect(master)
-      if (this.delayNode !== undefined) {
-        delaySend.connect(this.delayNode)
-        dry.connect(delaySend)
-      }
-      bus = { dry, delaySend }
-      this.outputs.set(event.trackId, bus)
-    }
-    bus.dry.gain.setValueAtTime(event.gain, audio.currentTime)
-    const delayLevel = event.synth?.delayMix ?? 0
-    bus.delaySend.gain.setValueAtTime(delayLevel * 0.65, audio.currentTime)
-    return bus.dry
+    if (this.mix === undefined) throw new Error('audio_unavailable')
+    return this.mix.input(event.trackId, event.gain, event.synth)
   }
 
   private stopVoices(when: number): void {

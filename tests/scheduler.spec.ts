@@ -97,4 +97,16 @@ describe('scheduler', () => {
     const step = advanceScheduler(initialSchedulerState(0, project), 0, 0.5, project, true)
     expect(step.events.map((e) => e.trackId)).toEqual(['a'])
   })
+
+  it('forwards track stereo pan onto emitted schedule events', () => {
+    const project = withTracks('pan', [
+      { ...track('left', 'lead', [note]), pan: -0.45 },
+      track('center', 'bass', [{ ...note, pitch: 48 }]),
+    ], 1)
+    const step = advanceScheduler(initialSchedulerState(0, project), 0, 0.5, project, true)
+    expect(step.events.map((e) => [e.trackId, e.pan])).toEqual([
+      ['left', -0.45],
+      ['center', undefined],
+    ])
+  })
 })

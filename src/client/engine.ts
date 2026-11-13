@@ -129,6 +129,7 @@ export class Engine {
         velocity: vel,
         // Audition at the track's own level, so a quiet track previews quietly.
         gain: selectedTrack?.gain ?? 0.82,
+        ...(selectedTrack?.pan !== undefined ? { pan: selectedTrack.pan } : {}),
         synth: effectiveSynth,
         kit: instrumentId === 'drums' && selectedTrack?.instrumentId === 'drums' ? selectedTrack.kit : undefined,
         time: audio.currentTime,
@@ -260,7 +261,7 @@ export class Engine {
 
   private outputFor(event: ScheduleEvent): GainNode {
     if (this.mix === undefined) throw new Error('audio_unavailable')
-    return this.mix.input(event.trackId, event.gain, event.synth)
+    return this.mix.input(event.trackId, event.gain, event.synth, event.pan)
   }
 
   private stopVoices(when: number): void {

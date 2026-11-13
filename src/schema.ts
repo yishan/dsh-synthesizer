@@ -53,6 +53,7 @@ export const trackSchema = z.strictObject({
   mute: z.boolean(),
   solo: z.boolean().optional(),
   gain: z.number().min(0).max(1),
+  pan: z.number().min(-1).max(1).optional(),
   synth: synthPatchSchema.optional(),
   kit: z.string().regex(KIT_PATTERN).optional(),
   notes: z.array(noteSchema).max(MAX_NOTES_PER_TRACK),

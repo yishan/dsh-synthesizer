@@ -6,8 +6,8 @@
 import type { SynthPatch } from '../model.ts'
 
 export interface MixGraph {
-  /** The node a track's voices connect to. Updates that track's level and sends. */
-  input(trackId: string, gain: number, synth: SynthPatch | undefined): GainNode
+  /** The node a track's voices connect to. Updates that track's level, pan, and sends. */
+  input(trackId: string, gain: number, synth: SynthPatch | undefined, pan?: number): GainNode
   setTempo(bpm: number): void
   setMuted(muted: boolean): void
   readonly analyser: AnalyserNode | undefined
@@ -23,6 +23,7 @@ const REVERB_SECONDS = 2.2
 
 interface TrackBus {
   dry: GainNode
+  panner: StereoPannerNode | undefined
   delaySend: GainNode
   reverbSend: GainNode
 }
@@ -104,25 +105,30 @@ export function createMixGraph(ctx: BaseAudioContext, destination: AudioNode): M
 
   return {
     analyser,
-    input(trackId, gain, synth) {
+    input(trackId, gain, synth, pan = 0) {
       let bus = buses.get(trackId)
       if (bus === undefined) {
         const dry = ctx.createGain()
+        const panner = typeof ctx.createStereoPanner === 'function' ? ctx.createStereoPanner() : undefined
         const delaySend = ctx.createGain()
         const reverbSend = ctx.createGain()
-        dry.connect(master)
+        const positioned: AudioNode = panner !== undefined ? (dry.connect(panner), panner) : dry
+        positioned.connect(master)
         if (delay !== undefined) {
-          dry.connect(delaySend)
+          positioned.connect(delaySend)
           delaySend.connect(delay)
         }
         if (reverb !== undefined) {
-          dry.connect(reverbSend)
+          positioned.connect(reverbSend)
           reverbSend.connect(reverb)
         }
-        bus = { dry, delaySend, reverbSend }
+        bus = { dry, panner, delaySend, reverbSend }
         buses.set(trackId, bus)
       }
       bus.dry.gain.setValueAtTime(gain, ctx.currentTime)
+      if (bus.panner !== undefined) {
+        bus.panner.pan.setValueAtTime(Math.max(-1, Math.min(1, pan)), ctx.currentTime)
+      }
       bus.delaySend.gain.setValueAtTime((synth?.delayMix ?? 0) * 0.65, ctx.currentTime)
       bus.reverbSend.gain.setValueAtTime(synth?.reverbMix ?? 0, ctx.currentTime)
       return bus.dry

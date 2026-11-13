@@ -83,6 +83,6 @@ export async function renderProject(project: Project): Promise<AudioBuffer> {
     true,
   )
   // The instruments only use the node factories and the clock, which both context kinds share.
-  playEvents(step.events, ctx as unknown as AudioContext, (event) => mix.input(event.trackId, event.gain, event.synth))
+  playEvents(step.events, ctx as unknown as AudioContext, (event) => mix.input(event.trackId, event.gain, event.synth, event.pan))
   return ctx.startRendering()
 }

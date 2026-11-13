@@ -89,6 +89,8 @@ export interface Track {
   /** True when the track is soloed. Absent means not soloed. */
   solo?: boolean | undefined
   gain: number
+  /** Stereo pan, -1 (left) .. 1 (right). Absent means centered (0). */
+  pan?: number | undefined
   synth?: SynthPatch | undefined
   /** Drum tracks only: which drum kit plays the track. Absent means the default kit. */
   kit?: string | undefined
@@ -244,6 +246,9 @@ export function sanitizeProject(project: Project): Project {
       if (sanitizedNotes.length >= MAX_NOTES_PER_TRACK) break
     }
 
+    const pan = typeof track.pan === 'number' && Number.isFinite(track.pan)
+      ? Number(clamp(track.pan, -1, 1).toFixed(2))
+      : 0
     const baseTrack: Track = {
       id,
       name: (track.name.trim() || `音轨 ${idx + 1}`).slice(0, 64),
@@ -251,6 +256,7 @@ export function sanitizeProject(project: Project): Project {
       mute: Boolean(track.mute),
       ...(track.solo === true ? { solo: true } : {}),
       gain: Number(clamp(track.gain, 0, 1).toFixed(3)),
+      ...(Math.abs(pan) >= 0.01 ? { pan } : {}),
       notes: sanitizedNotes,
     }
     if (track.synth !== undefined && baseTrack.instrumentId !== 'drums') {
@@ -327,6 +333,7 @@ export function coerceProject(value: unknown): Project | null {
       mute: entry.mute === true,
       ...(entry.solo === true ? { solo: true } : {}),
       gain: num(entry.gain, 0.8),
+      ...(typeof entry.pan === 'number' ? { pan: entry.pan } : {}),
       ...(synth !== null ? { synth } : {}),
       ...(typeof entry.kit === 'string' ? { kit: entry.kit } : {}),
       notes,

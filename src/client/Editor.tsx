@@ -384,6 +384,25 @@ export function Editor(): JSX.Element {
                     className="dsyn-range"
                     style={rangeFill(track.gain, 0, 1)}
                   />
+                  <input
+                    aria-label={`${track.name}声像`}
+                    title={
+                      Math.abs(track.pan ?? 0) < 0.01
+                        ? '声像 中（双击归中）'
+                        : (track.pan ?? 0) < 0
+                          ? `声像 左 ${Math.round(Math.abs(track.pan ?? 0) * 100)}%（双击归中）`
+                          : `声像 右 ${Math.round((track.pan ?? 0) * 100)}%（双击归中）`
+                    }
+                    type="range"
+                    min={-1}
+                    max={1}
+                    step={0.05}
+                    value={track.pan ?? 0}
+                    onChange={(event) => { store.updateTrack(track.id, { pan: Number(event.target.value) }) }}
+                    onDoubleClick={() => { store.updateTrack(track.id, { pan: 0 }) }}
+                    className="dsyn-range"
+                    style={{ ...rangeFill(track.pan ?? 0, -1, 1), width: 52, flex: 'none' }}
+                  />
                 </div>
               </div>
             )

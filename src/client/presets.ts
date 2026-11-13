@@ -496,6 +496,32 @@ export function transposeNotes(notes: readonly Note[], semitones: number): Note[
   }))
 }
 
+/** Add subtle velocity dynamics so a quantized grid feels more human-played. */
+export function humanizeNotes(notes: readonly Note[], amount = 12): Note[] {
+  return notes.map((note) => {
+    const downbeatBias = note.startBeat % 1 === 0 ? 4 : -2
+    const jitter = Math.round((Math.random() * 2 - 1) * amount) + downbeatBias
+    return {
+      ...note,
+      velocity: Math.max(20, Math.min(127, note.velocity + jitter)),
+    }
+  })
+}
+
+/** Replace the final beat of a drum loop with a turnaround snare/tom fill. */
+export function addDrumFill(notes: readonly Note[], bars: number): Note[] {
+  const fillStart = Math.max(0, bars * BEATS_PER_BAR - 1)
+  const kept = notes.filter((note) => note.startBeat < fillStart)
+  const fill: Note[] = [
+    n(DRUM_SNARE, fillStart, 0.25, 94),
+    n(DRUM_TOM_LOW, fillStart + 0.25, 0.25, 98),
+    n(DRUM_SNARE, fillStart + 0.5, 0.25, 108),
+    n(DRUM_TOM_LOW, fillStart + 0.75, 0.25, 114),
+    n(DRUM_OPEN_HAT, fillStart + 0.75, 0.25, 86),
+  ]
+  return sortNotes([...kept, ...fill])
+}
+
 export interface SongPresetItem {
   id: string
   title: string
@@ -614,6 +640,7 @@ function buildSynthwaveProject(id = createProjectId()): Project {
         instrumentId: 'pad',
         mute: false,
         gain: 0.6,
+        pan: -0.2,
         synth: {
           ...presetPatch('pad-strings'),
           reverbMix: 0.42,
@@ -626,6 +653,7 @@ function buildSynthwaveProject(id = createProjectId()): Project {
         instrumentId: 'pluck',
         mute: false,
         gain: 0.58,
+        pan: 0.28,
         synth: {
           ...DEFAULT_SYNTH_PATCHES.pluck!,
           reverbMix: 0.3,
@@ -1065,6 +1093,7 @@ function buildAmbientProject(id = createProjectId()): Project {
         instrumentId: 'pad',
         mute: false,
         gain: 0.76,
+        pan: -0.18,
         synth: {
           ...presetPatch('pad-breath'),
           reverbMix: 0.65,
@@ -1077,6 +1106,7 @@ function buildAmbientProject(id = createProjectId()): Project {
         instrumentId: 'pluck',
         mute: false,
         gain: 0.62,
+        pan: 0.25,
         synth: {
           ...presetPatch('pluck-harp'),
           reverbMix: 0.55,
@@ -1090,6 +1120,7 @@ function buildAmbientProject(id = createProjectId()): Project {
         instrumentId: 'bell',
         mute: false,
         gain: 0.64,
+        pan: -0.22,
         synth: {
           ...presetPatch('bell-glass'),
           reverbMix: 0.6,
@@ -1190,6 +1221,7 @@ function buildDiscoProject(id = createProjectId()): Project {
         instrumentId: 'keys',
         mute: false,
         gain: 0.66,
+        pan: -0.22,
         synth: {
           ...presetPatch('keys-clav'),
           reverbMix: 0.22,
@@ -1202,6 +1234,7 @@ function buildDiscoProject(id = createProjectId()): Project {
         instrumentId: 'pad',
         mute: false,
         gain: 0.56,
+        pan: 0.25,
         synth: {
           ...presetPatch('pad-strings'),
           reverbMix: 0.38,

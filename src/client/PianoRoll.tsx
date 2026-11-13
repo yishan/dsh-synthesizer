@@ -13,10 +13,12 @@ import { getEngine } from './engine.ts'
 import { Icon } from './icons.tsx'
 import { DRUM_LABELS } from './instruments.ts'
 import {
+  addDrumFill,
   buildScaleChord,
   DRUM_PATTERN_LIST,
   generateDrumPattern,
   generateMelodicPattern,
+  humanizeNotes,
   isPitchInScale,
   MELODIC_PATTERN_LIST,
   ROOT_NOTES,
@@ -520,6 +522,25 @@ export function PianoRoll({ track, bars, playing }: { track: Track; bars: number
                         </button>
                       </>
                     )}
+                    {drums ? (
+                      <button
+                        type="button"
+                        title="在最后一小节末尾半拍生成军鼓/通鼓加花过渡（可撤销）"
+                        onClick={() => { store.setTrackNotes(track.id, addDrumFill(track.notes, bars)) }}
+                        className="dsyn-btn"
+                      >
+                        末尾加花
+                      </button>
+                    ) : null}
+                    <button
+                      type="button"
+                      title="给当前音轨音符施加轻微随机力度起伏，增强律动质感（可撤销）"
+                      disabled={track.notes.length === 0}
+                      onClick={() => { store.setTrackNotes(track.id, humanizeNotes(track.notes)) }}
+                      className="dsyn-btn"
+                    >
+                      人性化力度
+                    </button>
                     <button
                       type="button"
                       title="把第 1 小节的音符平铺复制到后面所有小节（可撤销）"

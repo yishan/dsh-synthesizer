@@ -221,7 +221,7 @@ export class ProjectClient {
     })
   }
 
-  updateTrack(trackId: string, patch: Partial<Pick<Track, 'name' | 'instrumentId' | 'mute' | 'solo' | 'gain' | 'synth'>>): void {
+  updateTrack(trackId: string, patch: Partial<Pick<Track, 'name' | 'instrumentId' | 'mute' | 'solo' | 'gain' | 'pan' | 'synth'>>): void {
     this.mapTrack(trackId, (track) => {
       const nextInstrument = patch.instrumentId ?? track.instrumentId
       let nextSynth = patch.synth !== undefined ? patch.synth : track.synth
@@ -234,6 +234,9 @@ export class ProjectClient {
       }
       if ('solo' in patch && patch.solo !== true) {
         delete updated.solo
+      }
+      if ('pan' in patch && (patch.pan === undefined || Math.abs(patch.pan) < 0.01)) {
+        delete updated.pan
       }
       // A track still carrying its automatic name is renamed along with its instrument.
       if (patch.name === undefined && nextInstrument !== track.instrumentId && hasAutoName(track)) {

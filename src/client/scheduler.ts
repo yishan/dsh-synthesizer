@@ -15,6 +15,7 @@ export interface ScheduleEvent {
   pitch: number
   velocity: number
   gain: number
+  pan?: number
   synth?: SynthPatch
   kit?: string
   time: number
@@ -76,6 +77,7 @@ function collect(
           pitch: note.pitch,
           velocity: note.velocity,
           gain: track.gain,
+          ...(track.pan !== undefined ? { pan: track.pan } : {}),
           synth: track.synth,
           kit: track.kit,
           time,

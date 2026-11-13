@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Project } from '../src/schema.ts'
 import { saveProject } from '../src/client/api.ts'
 import { DEFAULT_SYNTH_PATCHES } from '../src/client/instruments.ts'
-import { buildScaleChord, SONG_PRESETS } from '../src/client/presets.ts'
+import { addDrumFill, buildScaleChord, humanizeNotes, SONG_PRESETS } from '../src/client/presets.ts'
 import { ProjectClient } from '../src/client/project-store.ts'
 
 /** Minimal in-memory localStorage. */
@@ -394,5 +394,41 @@ describe('project client', () => {
     client.undo()
     expect(client.getState().project.bars).toBe(4)
     expect(client.getState().project.tracks[1]?.notes).toHaveLength(12)
+  })
+
+  it('persists and resets track pan, humanizes note velocities, and generates end-of-loop drum fills', async () => {
+    installHost()
+    const client = new ProjectClient()
+    await client.newProject(true)
+    const track = client.getState().project.tracks[1]
+    if (track === undefined) throw new Error('track missing')
+
+    // Track pan clamps / clears at center 0
+    client.updateTrack(track.id, { pan: -0.35 })
+    expect(client.getState().project.tracks[1]?.pan).toBe(-0.35)
+    client.updateTrack(track.id, { pan: 0 })
+    expect(client.getState().project.tracks[1]?.pan).toBeUndefined()
+
+    // Humanize keeps pitch/timing and varies velocity within [1, 127]
+    const baseNotes = [0, 0.5, 1, 1.5, 2, 2.5].map((startBeat) => ({
+      pitch: 60,
+      startBeat,
+      durationBeats: 0.25,
+      velocity: 96,
+    }))
+    const humanized = humanizeNotes(baseNotes, 12)
+    expect(humanized).toHaveLength(baseNotes.length)
+    expect(humanized.every((n) => n.velocity >= 84 && n.velocity <= 108 && n.pitch === 60)).toBe(true)
+
+    // Drum fill replaces only the final 2 beats of the last bar and adds snare/tom hits
+    const existing = [
+      { pitch: 36, startBeat: 0, durationBeats: 0.25, velocity: 110 },
+      { pitch: 38, startBeat: 14.5, durationBeats: 0.25, velocity: 100 },
+    ]
+    const withFill = addDrumFill(existing, 4)
+    expect(withFill[0]).toEqual(existing[0])
+    const fillHits = withFill.filter((n) => n.startBeat >= 14)
+    expect(fillHits.length).toBeGreaterThanOrEqual(4)
+    expect(fillHits.every((n) => n.startBeat < 16)).toBe(true)
   })
 })

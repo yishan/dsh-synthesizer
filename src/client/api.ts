@@ -11,10 +11,18 @@ export interface ProjectSummary {
   notes?: number
 }
 
+export interface SyncInfo {
+  revision: number
+  lastToolProjectId: string | null
+  lastToolProjectName: string | null
+  lastToolAt: number
+}
+
 interface ListBody {
   ok?: boolean
   error?: string
   projects?: ProjectSummary[]
+  sync?: SyncInfo
 }
 
 interface ProjectBody {
@@ -126,9 +134,17 @@ async function readBody<T extends { ok?: boolean; error?: string }>(response: Re
   return body
 }
 
-export async function listProjects(): Promise<ProjectSummary[]> {
+export async function listProjectsWithSync(): Promise<{ projects: ProjectSummary[]; sync: SyncInfo | null }> {
   const body = await readBody<ListBody>(await fetch('/api/dsh-synthesizer/projects', { cache: 'no-store' }))
-  return body.projects ?? []
+  return {
+    projects: body.projects ?? [],
+    sync: body.sync ?? null,
+  }
+}
+
+export async function listProjects(): Promise<ProjectSummary[]> {
+  const { projects } = await listProjectsWithSync()
+  return projects
 }
 
 export async function readProject(id: string): Promise<Project> {

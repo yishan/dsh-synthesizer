@@ -7,6 +7,7 @@
  */
 import type { Context } from '@deepseek-ai/cordis'
 import { ProjectStore, ProjectStoreError } from './store.ts'
+import { SyncTracker } from './sync.ts'
 import { VERSION } from './version.ts'
 
 type FetchMethod = 'GET' | 'HEAD' | 'POST'
@@ -38,7 +39,11 @@ function failure(error: unknown): Response {
  * Register the project routes on the authenticated `/api` channel.
  * @returns the number of routes registered.
  */
-export function registerRoutes(connectionCtx: Context, projects: ProjectStore): number {
+export function registerRoutes(
+  connectionCtx: Context,
+  projects: ProjectStore,
+  tracker: SyncTracker = new SyncTracker(),
+): number {
   const connection = connectionCtx.get('connection') as ConnectionFace | undefined
   const fetchRegistry = connection?.fetch
   const register = fetchRegistry?.register
@@ -58,10 +63,14 @@ export function registerRoutes(connectionCtx: Context, projects: ProjectStore): 
     try {
       if (request.method === 'GET') {
         const id = new URL(request.url).searchParams.get('id')
-        if (id === null || id === '') return json({ ok: true, version: VERSION, projects: projects.list() })
+        if (id === null || id === '') {
+          return json({ ok: true, version: VERSION, projects: projects.list(), sync: tracker.snapshot() })
+        }
         return json({ ok: true, project: projects.read(id) })
       }
-      return json({ ok: true, project: projects.save(await request.json() as unknown) })
+      const saved = projects.save(await request.json() as unknown)
+      tracker.markClientSave()
+      return json({ ok: true, project: saved })
     } catch (error) {
       return failure(error)
     }

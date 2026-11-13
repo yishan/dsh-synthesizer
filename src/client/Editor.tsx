@@ -49,6 +49,19 @@ export function Editor(): JSX.Element {
   useEffect(() => {
     ensureStyles()
     void store.hydrate()
+    const stopPolling = store.startSyncPolling()
+    const onFocusOrVisible = (): void => {
+      if (typeof document === 'undefined' || document.visibilityState !== 'hidden') {
+        void store.checkForExternalUpdates()
+      }
+    }
+    window.addEventListener('focus', onFocusOrVisible)
+    document.addEventListener('visibilitychange', onFocusOrVisible)
+    return () => {
+      stopPolling()
+      window.removeEventListener('focus', onFocusOrVisible)
+      document.removeEventListener('visibilitychange', onFocusOrVisible)
+    }
   }, [store])
   useEffect(() => {
     const heldKeys = new Map<string, number>()
@@ -232,6 +245,16 @@ export function Editor(): JSX.Element {
         </div>
 
         <div className="dsyn-group">
+          {state.pendingToolProject !== null ? (
+            <button
+              type="button"
+              className="dsyn-btn is-small is-active"
+              title="dsh 会话生成或更新了这首曲目，点击立即加载"
+              onClick={() => { void store.acceptPendingToolProject() }}
+            >
+              新曲目：{state.pendingToolProject.name} · 打开
+            </button>
+          ) : null}
           {state.saveFailed && !state.saving ? (
             <button
               type="button"

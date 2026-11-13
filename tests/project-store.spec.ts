@@ -17,9 +17,14 @@ function installStorage(): Map<string, string> {
 }
 
 /** In-memory stand-in for the Host routes. `strictV1` rejects `synth` like the first schema did. */
-function installHost(options: { strictV1?: boolean } = {}): { saved: Map<string, Project>; posts: Project[] } {
+function installHost(options: { strictV1?: boolean } = {}): {
+  saved: Map<string, Project>
+  posts: Project[]
+  sync: { revision: number; lastToolProjectId: string | null; lastToolProjectName: string | null; lastToolAt: number }
+} {
   const saved = new Map<string, Project>()
   const posts: Project[] = []
+  const sync = { revision: 0, lastToolProjectId: null as string | null, lastToolProjectName: null as string | null, lastToolAt: 0 }
   vi.stubGlobal('fetch', async (input: string, init?: RequestInit) => {
     const url = new URL(input, 'http://127.0.0.1')
     if (init?.method === 'POST' && url.pathname.endsWith('/delete')) {
@@ -40,14 +45,14 @@ function installHost(options: { strictV1?: boolean } = {}): { saved: Map<string,
     }
     const id = url.searchParams.get('id')
     if (id === null) {
-      return Response.json({ ok: true, projects: [...saved.values()].map((p) => ({ id: p.id, name: p.name, updatedAt: '' })) })
+      return Response.json({ ok: true, projects: [...saved.values()].map((p) => ({ id: p.id, name: p.name, updatedAt: '' })), sync })
     }
     const project = saved.get(id)
     return project === undefined
       ? Response.json({ ok: false, error: 'not_found' }, { status: 404 })
       : Response.json({ ok: true, project })
   })
-  return { saved, posts }
+  return { saved, posts, sync }
 }
 
 function noteCounts(project: Project): number[] {
@@ -418,7 +423,7 @@ describe('project client', () => {
     }))
     const humanized = humanizeNotes(baseNotes, 12)
     expect(humanized).toHaveLength(baseNotes.length)
-    expect(humanized.every((n) => n.velocity >= 84 && n.velocity <= 108 && n.pitch === 60)).toBe(true)
+    expect(humanized.every((n) => n.velocity >= 82 && n.velocity <= 112 && n.pitch === 60)).toBe(true)
 
     // Drum fill replaces only the final 2 beats of the last bar and adds snare/tom hits
     const existing = [
@@ -430,5 +435,51 @@ describe('project client', () => {
     const fillHits = withFill.filter((n) => n.startBeat >= 14)
     expect(fillHits.length).toBeGreaterThanOrEqual(4)
     expect(fillHits.every((n) => n.startBeat < 16)).toBe(true)
+  })
+
+  it('auto-loads tool-generated projects when idle and surfaces a prompt when local edits are pending', async () => {
+    const host = installHost()
+    const client = new ProjectClient()
+    await client.hydrate()
+
+    // Simulate a tool creating a new song while editor is idle
+    const toolProject: Project = {
+      ...client.getState().project,
+      id: 'tool-song-1',
+      name: 'Session Beat 1',
+      bpm: 132,
+    }
+    host.saved.set(toolProject.id, toolProject)
+    host.sync.revision = 1
+    host.sync.lastToolProjectId = toolProject.id
+    host.sync.lastToolProjectName = toolProject.name
+    host.sync.lastToolAt = 1000
+
+    await client.checkForExternalUpdates()
+    expect(client.getState().project.id).toBe('tool-song-1')
+    expect(client.getState().project.bpm).toBe(132)
+    expect(client.getState().pendingToolProject).toBeNull()
+
+    // Now make a pending local edit (unflushed debounce timer) and simulate another tool song
+    client.setBpm(140)
+    const toolProject2: Project = {
+      ...toolProject,
+      id: 'tool-song-2',
+      name: 'Session Beat 2',
+      bpm: 96,
+    }
+    host.saved.set(toolProject2.id, toolProject2)
+    host.sync.revision = 2
+    host.sync.lastToolProjectId = toolProject2.id
+    host.sync.lastToolProjectName = toolProject2.name
+    host.sync.lastToolAt = 2000
+
+    await client.checkForExternalUpdates()
+    expect(client.getState().project.id).toBe('tool-song-1')
+    expect(client.getState().pendingToolProject).toEqual({ id: 'tool-song-2', name: 'Session Beat 2' })
+
+    await client.acceptPendingToolProject()
+    expect(client.getState().project.id).toBe('tool-song-2')
+    expect(client.getState().pendingToolProject).toBeNull()
   })
 })

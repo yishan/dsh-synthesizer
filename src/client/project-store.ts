@@ -19,7 +19,7 @@ import {
   type SynthPatch,
   type Track,
 } from '../model.ts'
-import { deleteProject, listProjects, readProject, saveProject, type ProjectSummary } from './api.ts'
+import { deleteProject, listProjectsWithSync, readProject, saveProject, type ProjectSummary } from './api.ts'
 import {
   clearViewState,
   getLastProjectId,
@@ -52,6 +52,8 @@ export interface SessionState {
   saveFailed: boolean
   /** A project deleted moments ago that `restoreDeleted` can bring back. */
   lastDeleted: { id: string; name: string } | null
+  /** A project created or updated from the dsh session while local edits are pending. */
+  pendingToolProject: { id: string; name: string } | null
   canUndo: boolean
   error: string | null
 }
@@ -89,6 +91,9 @@ export class ProjectClient {
   private state: SessionState
   private listeners = new Set<() => void>()
   private timer: ReturnType<typeof setTimeout> | undefined
+  private syncTimer: ReturnType<typeof setInterval> | undefined
+  private syncInFlight = false
+  private lastToolAt = 0
   private revision = 0
   private hydrated = false
   private history: Project[] = []
@@ -119,6 +124,7 @@ export class ProjectClient {
       saving: false,
       saveFailed: false,
       lastDeleted: null,
+      pendingToolProject: null,
       canUndo: false,
       error: null,
     }
@@ -143,7 +149,10 @@ export class ProjectClient {
       this.emit()
     }
     try {
-      const projects = await listProjects()
+      const { projects, sync } = await listProjectsWithSync()
+      if (sync !== null && sync.lastToolAt > this.lastToolAt) {
+        this.lastToolAt = sync.lastToolAt
+      }
       if (projects.length === 0) {
         const created = await saveProject(createStarterProject())
         this.replaceProject(created, summaryOf(created, []), false, true)
@@ -667,6 +676,71 @@ export class ProjectClient {
     this.state = { ...this.state, project: sanitized, canUndo: true, error: null }
     this.emit()
     this.scheduleSave()
+  }
+
+  /**
+   * Poll the Host for projects created or updated by dsh session tools.
+   * Auto-loads when no local edits are pending; otherwise surfaces a banner.
+   */
+  async checkForExternalUpdates(): Promise<void> {
+    if (!this.hydrated || this.syncInFlight) return
+    this.syncInFlight = true
+    try {
+      const { projects, sync } = await listProjectsWithSync()
+      if (sync === null || sync.lastToolProjectId === null || sync.lastToolAt <= this.lastToolAt) {
+        return
+      }
+      this.lastToolAt = sync.lastToolAt
+      const targetId = sync.lastToolProjectId
+      const targetName = sync.lastToolProjectName ?? targetId
+      const hasPendingLocalWork = this.timer !== undefined || this.state.saving || this.state.saveFailed
+      if (!hasPendingLocalWork || this.state.project.id === targetId) {
+        const loaded = await readProject(targetId)
+        this.state = { ...this.state, pendingToolProject: null }
+        this.replaceProject(loaded, projects, false)
+        return
+      }
+      this.state = {
+        ...this.state,
+        projects,
+        pendingToolProject: { id: targetId, name: targetName },
+      }
+      this.emit()
+    } catch {
+      /* Ignore transient polling errors. */
+    } finally {
+      this.syncInFlight = false
+    }
+  }
+
+  async acceptPendingToolProject(): Promise<void> {
+    const pending = this.state.pendingToolProject
+    if (pending === null) return
+    this.state = { ...this.state, pendingToolProject: null }
+    this.emit()
+    await this.selectProject(pending.id)
+  }
+
+  dismissPendingToolProject(): void {
+    if (this.state.pendingToolProject === null) return
+    this.state = { ...this.state, pendingToolProject: null }
+    this.emit()
+  }
+
+  startSyncPolling(intervalMs = 2500): () => void {
+    this.stopSyncPolling()
+    this.syncTimer = setInterval(() => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return
+      void this.checkForExternalUpdates()
+    }, intervalMs)
+    return () => { this.stopSyncPolling() }
+  }
+
+  stopSyncPolling(): void {
+    if (this.syncTimer !== undefined) {
+      clearInterval(this.syncTimer)
+      this.syncTimer = undefined
+    }
   }
 
   private replaceProject(project: Project, projects: ProjectSummary[], save: boolean, pristine = false): void {

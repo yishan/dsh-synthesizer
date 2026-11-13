@@ -86,11 +86,21 @@ export interface Track {
   name: string
   instrumentId: string
   mute: boolean
+  /** True when the track is soloed. Absent means not soloed. */
+  solo?: boolean | undefined
   gain: number
   synth?: SynthPatch | undefined
   /** Drum tracks only: which drum kit plays the track. Absent means the default kit. */
   kit?: string | undefined
   notes: Note[]
+}
+
+/** True when a track should produce audio given the project's mute/solo states. */
+export function isTrackAudible(track: Track, tracks: readonly Track[]): boolean {
+  if (track.gain <= 0) return false
+  const anySolo = tracks.some((t) => t.solo === true)
+  if (anySolo) return track.solo === true
+  return !track.mute
 }
 
 export interface Project {
@@ -239,6 +249,7 @@ export function sanitizeProject(project: Project): Project {
       name: (track.name.trim() || `音轨 ${idx + 1}`).slice(0, 64),
       instrumentId: (track.instrumentId.trim() || 'lead').slice(0, 64),
       mute: Boolean(track.mute),
+      ...(track.solo === true ? { solo: true } : {}),
       gain: Number(clamp(track.gain, 0, 1).toFixed(3)),
       notes: sanitizedNotes,
     }
@@ -314,6 +325,7 @@ export function coerceProject(value: unknown): Project | null {
       name: text(entry.name, ''),
       instrumentId: text(entry.instrumentId, 'lead'),
       mute: entry.mute === true,
+      ...(entry.solo === true ? { solo: true } : {}),
       gain: num(entry.gain, 0.8),
       ...(synth !== null ? { synth } : {}),
       ...(typeof entry.kit === 'string' ? { kit: entry.kit } : {}),

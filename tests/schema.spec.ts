@@ -32,11 +32,34 @@ describe('project schema', () => {
       ],
     })
 
+    const melodicSignatures = new Set<string>()
+    const kitsUsed = new Set<string>()
+    let hasSwing = false
+    let hasReverb = false
+    let hasLfo = false
+
     for (const preset of SONG_PRESETS) {
       const built = preset.build(`preset-${preset.id}`)
       expect(projectSchema.parse(built).id).toBe(`preset-${preset.id}`)
       expect(built.tracks.some((t) => t.notes.length > 0)).toBe(true)
+      if ((built.swing ?? 0) > 0) hasSwing = true
+      for (const track of built.tracks) {
+        if (track.instrumentId === 'drums') {
+          kitsUsed.add(track.kit ?? 'classic')
+        } else {
+          if ((track.synth?.reverbMix ?? 0) > 0) hasReverb = true
+          if (track.synth?.lfoTarget !== undefined) hasLfo = true
+          const sig = track.notes.map((n) => `${n.pitch}@${n.startBeat}:${n.durationBeats}`).join(',')
+          expect(melodicSignatures.has(sig)).toBe(false)
+          melodicSignatures.add(sig)
+        }
+      }
     }
+
+    expect(kitsUsed).toEqual(new Set(['classic', '808', 'lofi', 'chip']))
+    expect(hasSwing).toBe(true)
+    expect(hasReverb).toBe(true)
+    expect(hasLfo).toBe(true)
 
     const randomProject = generateRandomGrooveProject('rand1')
     expect(projectSchema.parse(randomProject).id).toBe('rand1')

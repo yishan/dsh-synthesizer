@@ -259,6 +259,35 @@ export function isPitchInScale(pitch: number, rootSemitone: number, scaleId: str
   return scale.intervals.includes(rel)
 }
 
+export type ChordBrushMode = 'single' | 'triad' | 'seventh'
+
+/** Build a diatonic triad or seventh chord rooted at `rootPitch` in the active scale. */
+export function buildScaleChord(
+  rootPitch: number,
+  rootSemitone: number,
+  scaleId: string,
+  mode: ChordBrushMode,
+): number[] {
+  if (mode === 'single') return [rootPitch]
+  const count = mode === 'triad' ? 3 : 4
+  if (scaleId === 'chromatic') {
+    const offsets = mode === 'triad' ? [0, 4, 7] : [0, 4, 7, 11]
+    return offsets.map((o) => rootPitch + o).filter((p) => p >= PITCH_MIN && p <= PITCH_MAX)
+  }
+  const pool = scalePitches(rootSemitone, scaleId, rootPitch, PITCH_MAX)
+  const notes = [rootPitch]
+  // If rootPitch is in pool, pool[0] === rootPitch, so step by 2 scale degrees.
+  // If rootPitch is out of scale, step from index 0 of pool above rootPitch.
+  const startIdx = pool[0] === rootPitch ? 0 : -1
+  for (let i = 1; i < count; i += 1) {
+    const target = pool[startIdx + i * 2]
+    if (target !== undefined && target <= PITCH_MAX && !notes.includes(target)) {
+      notes.push(target)
+    }
+  }
+  return notes
+}
+
 function n(pitch: number, startBeat: number, durationBeats = STEP_BEATS, velocity = 100): Note {
   return { pitch, startBeat, durationBeats, velocity }
 }
@@ -366,6 +395,7 @@ export function generateMelodicPattern(
   bars = 4,
   rootSemitone = 9,
   scaleId = 'minor',
+  progDegrees: readonly number[] = [0, 5, 2, 6],
 ): Note[] {
   const notes: Note[] = []
   const scale = SCALES.find((s) => s.id === scaleId)?.intervals ?? [0, 2, 3, 5, 7, 8, 10]
@@ -376,8 +406,6 @@ export function generateMelodicPattern(
     const pitch = octaveBase + rootSemitone + oct * 12 + (scale[idx] ?? 0)
     return Math.max(PITCH_MIN, Math.min(PITCH_MAX, pitch))
   }
-
-  const progDegrees = [0, 5, 2, 6] // i - VI - III - VII in minor
 
   if (patternId === 'chords') {
     for (let bar = 0; bar < bars; bar += 1) {
@@ -479,8 +507,69 @@ export interface SongPresetItem {
 
 /**
  * 1. Synthwave '84 (霓虹夜驾 · 118 BPM · A Minor)
+ * Driving 8th-note synth bass, lush voice-led retro pads, dotted pluck arp, and singing vibrato lead.
  */
 function buildSynthwaveProject(id = createProjectId()): Project {
+  const bassNotes: Note[] = []
+  const bassRoots = [45, 41, 36, 43] // A2, F2, C2, G2
+  for (let bar = 0; bar < 4; bar += 1) {
+    const b = bar * 4
+    const root = bassRoots[bar]!
+    const oct = root + 12
+    for (let step = 0; step < 8; step += 1) {
+      const isOct = step === 3 || step === 7
+      bassNotes.push(n(isOct ? oct : root, b + step * 0.5, 0.25, step % 2 === 0 ? 112 : 88))
+    }
+  }
+
+  const padNotes: Note[] = [
+    // Am (A3, C4, E4)
+    n(57, 0, 3.75, 82), n(60, 0, 3.75, 80), n(64, 0, 3.75, 84),
+    // Fmaj7 (F3, A3, C4, E4)
+    n(53, 4, 3.75, 80), n(57, 4, 3.75, 78), n(60, 4, 3.75, 82), n(64, 4, 3.75, 80),
+    // C/G (G3, C4, E4)
+    n(55, 8, 3.75, 82), n(60, 8, 3.75, 84), n(64, 8, 3.75, 80),
+    // G6 -> G (G3, B3, D4, E4 -> D4)
+    n(55, 12, 3.75, 82), n(59, 12, 3.75, 80), n(62, 12, 3.75, 84), n(64, 12, 1.75, 76),
+  ]
+
+  // Dotted-16th / syncopated retro pluck arpeggio matching each bar's harmony
+  const arpChords = [
+    [69, 72, 76], // Am
+    [65, 69, 72], // F
+    [67, 72, 76], // C
+    [67, 71, 74], // G
+  ]
+  const arpPattern = [
+    { t: 0, i: 0, v: 98 },
+    { t: 0.75, i: 1, v: 84 },
+    { t: 1.5, i: 2, v: 94 },
+    { t: 2, i: 1, v: 82 },
+    { t: 2.75, i: 2, v: 92 },
+    { t: 3.5, i: 0, v: 86 },
+  ]
+  const arpNotes: Note[] = []
+  for (let bar = 0; bar < 4; bar += 1) {
+    const chord = arpChords[bar]!
+    const b = bar * 4
+    for (const step of arpPattern) {
+      arpNotes.push(n(chord[step.i]!, b + step.t, 0.25, step.v))
+    }
+  }
+
+  // Soaring 80s anthem melody
+  const leadNotes: Note[] = [
+    n(76, 0, 1.5, 108), n(74, 1.5, 0.5, 96), n(72, 2, 1.5, 104), n(71, 3.5, 0.5, 92),
+    n(72, 4, 2, 106), n(69, 6, 1.5, 98), n(72, 7.5, 0.5, 94),
+    n(76, 8, 1, 110), n(79, 9, 1.5, 114), n(76, 10.5, 1, 102), n(72, 11.5, 0.5, 94),
+    n(74, 12, 2.5, 108), n(71, 14.5, 1, 98), n(72, 15.5, 0.5, 96),
+  ]
+
+  const drums = generateDrumPattern('synthwave', 4)
+  drums.push(n(DRUM_CYMBAL, 0, 0.5, 94))
+  // Turnaround tom fill at end of bar 4
+  drums.push(n(DRUM_TOM_LOW, 15.25, 0.25, 92), n(DRUM_SNARE, 15.5, 0.25, 98), n(DRUM_TOM_LOW, 15.75, 0.25, 104))
+
   return {
     version: 1,
     id,
@@ -489,6 +578,8 @@ function buildSynthwaveProject(id = createProjectId()): Project {
     beatsPerBar: BEATS_PER_BAR,
     bars: 4,
     loop: true,
+    scaleRoot: 9,
+    scaleId: 'minor',
     tracks: [
       {
         id: 'drums',
@@ -496,7 +587,8 @@ function buildSynthwaveProject(id = createProjectId()): Project {
         instrumentId: 'drums',
         mute: false,
         gain: 0.85,
-        notes: generateDrumPattern('synthwave', 4),
+        kit: 'classic',
+        notes: sortNotes(drums),
       },
       {
         id: 'bass',
@@ -514,32 +606,51 @@ function buildSynthwaveProject(id = createProjectId()): Project {
           envMod: 0.58,
           drive: 0.28,
         },
-        notes: generateMelodicPattern('octaveBass', 4, 9, 'minor'),
+        notes: sortNotes(bassNotes),
       },
       {
-        id: 'keys',
+        id: 'pad',
         name: '铺底',
         instrumentId: 'pad',
         mute: false,
-        gain: 0.68,
-        synth: DEFAULT_SYNTH_PATCHES.pad!,
-        notes: generateMelodicPattern('chords', 4, 9, 'minor'),
+        gain: 0.6,
+        synth: {
+          ...presetPatch('pad-strings'),
+          reverbMix: 0.42,
+        },
+        notes: sortNotes(padNotes),
+      },
+      {
+        id: 'pluck',
+        name: '琶音',
+        instrumentId: 'pluck',
+        mute: false,
+        gain: 0.58,
+        synth: {
+          ...DEFAULT_SYNTH_PATCHES.pluck!,
+          reverbMix: 0.3,
+        },
+        notes: sortNotes(arpNotes),
       },
       {
         id: 'lead',
-        name: '琶音',
+        name: '主旋律',
         instrumentId: 'lead',
         mute: false,
         gain: 0.72,
-        synth: DEFAULT_SYNTH_PATCHES.lead!,
-        notes: generateMelodicPattern('arpUp', 4, 9, 'minor'),
+        synth: {
+          ...presetPatch('lead-vibrato'),
+          reverbMix: 0.35,
+        },
+        notes: sortNotes(leadNotes),
       },
     ],
   }
 }
 
 /**
- * 2. Lo-Fi Chillhop (雨夜自习室 · 88 BPM · D Dorian)
+ * 2. Lo-Fi Chillhop (雨夜自习室 · 86 BPM · D Dorian · Swing)
+ * Dusty swung Rhodes jazz-hop (Dm9 -> G13 -> Cmaj9 -> A7alt) with warm triangle bass and bell counter-melody.
  */
 function buildLofiProject(id = createProjectId()): Project {
   const chords: Note[] = [
@@ -568,10 +679,13 @@ function buildLofiProject(id = createProjectId()): Project {
     version: 1,
     id,
     name: '雨夜自习室 · Lo-Fi Chill',
-    bpm: 88,
+    bpm: 86,
     beatsPerBar: BEATS_PER_BAR,
     bars: 4,
     loop: true,
+    scaleRoot: 2,
+    scaleId: 'dorian',
+    swing: 0.3,
     tracks: [
       {
         id: 'drums',
@@ -579,6 +693,7 @@ function buildLofiProject(id = createProjectId()): Project {
         instrumentId: 'drums',
         mute: false,
         gain: 0.8,
+        kit: 'lofi',
         notes: generateDrumPattern('lofi', 4),
       },
       {
@@ -604,8 +719,11 @@ function buildLofiProject(id = createProjectId()): Project {
         name: '和弦',
         instrumentId: 'keys',
         mute: false,
-        gain: 0.74,
-        synth: DEFAULT_SYNTH_PATCHES.keys!,
+        gain: 0.72,
+        synth: {
+          ...presetPatch('keys-warm'),
+          reverbMix: 0.26,
+        },
         notes: sortNotes(chords),
       },
       {
@@ -613,7 +731,7 @@ function buildLofiProject(id = createProjectId()): Project {
         name: '主旋律',
         instrumentId: 'bell',
         mute: false,
-        gain: 0.68,
+        gain: 0.66,
         synth: {
           ...DEFAULT_SYNTH_PATCHES.bell!,
           waveform: 'sine',
@@ -625,6 +743,7 @@ function buildLofiProject(id = createProjectId()): Project {
           sustain: 0.45,
           release: 0.3,
           delayMix: 0.36,
+          reverbMix: 0.35,
         },
         notes: sortNotes(melody),
       },
@@ -634,15 +753,69 @@ function buildLofiProject(id = createProjectId()): Project {
 
 /**
  * 3. Acid 303 Warehouse (酸液仓库 · 132 BPM · E Minor)
+ * Squelchy TB-303 bassline with resonant accent jumps, dub-techno minor chord stabs, and hypnotic filter-swept lead.
  */
 function buildAcidProject(id = createProjectId()): Project {
-  const stabs: Note[] = []
+  const acidNotes: Note[] = []
+  const barA = [
+    { t: 0, p: 40, d: 0.25, v: 112 },
+    { t: 0.25, p: 40, d: 0.25, v: 78 },
+    { t: 0.5, p: 52, d: 0.25, v: 124 }, // high accent squelch
+    { t: 1, p: 40, d: 0.25, v: 92 },
+    { t: 1.5, p: 43, d: 0.25, v: 114 },
+    { t: 1.75, p: 47, d: 0.5, v: 120 },
+    { t: 2.5, p: 40, d: 0.25, v: 85 },
+    { t: 2.75, p: 50, d: 0.25, v: 125 },
+    { t: 3, p: 47, d: 0.25, v: 95 },
+    { t: 3.5, p: 43, d: 0.25, v: 108 },
+    { t: 3.75, p: 42, d: 0.25, v: 118 },
+  ]
+  const barB = [
+    { t: 0, p: 40, d: 0.25, v: 115 },
+    { t: 0.5, p: 52, d: 0.5, v: 126 },
+    { t: 1.25, p: 47, d: 0.25, v: 96 },
+    { t: 1.5, p: 48, d: 0.25, v: 118 },
+    { t: 2, p: 40, d: 0.25, v: 88 },
+    { t: 2.5, p: 55, d: 0.25, v: 125 },
+    { t: 2.75, p: 52, d: 0.25, v: 110 },
+    { t: 3.25, p: 47, d: 0.25, v: 102 },
+    { t: 3.5, p: 50, d: 0.25, v: 122 },
+    { t: 3.75, p: 52, d: 0.25, v: 127 },
+  ]
   for (let bar = 0; bar < 4; bar += 1) {
     const b = bar * 4
-    for (const beat of [0.75, 2.5]) {
-      stabs.push(n(64, b + beat, 0.5, 96), n(67, b + beat, 0.5, 94), n(71, b + beat, 0.5, 92))
+    const pattern = bar % 2 === 0 ? barA : barB
+    for (const item of pattern) {
+      acidNotes.push(n(item.p, b + item.t, item.d, item.v))
     }
   }
+
+  const stabs: Note[] = []
+  const stabBeats = [
+    [0.75, 2.25],
+    [1.5, 3.25],
+    [0.75, 2.25],
+    [1.5, 3.75],
+  ]
+  for (let bar = 0; bar < 4; bar += 1) {
+    const b = bar * 4
+    for (const beat of stabBeats[bar]!) {
+      stabs.push(
+        n(64, b + beat, 0.25, 96),
+        n(67, b + beat, 0.25, 92),
+        n(71, b + beat, 0.25, 94),
+        n(74, b + beat, 0.25, 88),
+      )
+    }
+  }
+
+  const raveLead: Note[] = [
+    n(71, 0, 0.5, 96), n(76, 1.5, 0.25, 104), n(74, 2.5, 0.5, 94),
+    n(71, 4, 0.5, 98), n(79, 5.5, 0.5, 110), n(76, 7, 0.5, 96),
+    n(71, 8, 0.5, 96), n(76, 9.5, 0.25, 104), n(74, 10.5, 0.5, 98),
+    n(79, 12, 0.75, 112), n(78, 13.5, 0.5, 104), n(76, 14.5, 1, 108),
+  ]
+
   return {
     version: 1,
     id,
@@ -651,6 +824,8 @@ function buildAcidProject(id = createProjectId()): Project {
     beatsPerBar: BEATS_PER_BAR,
     bars: 4,
     loop: true,
+    scaleRoot: 4,
+    scaleId: 'minor',
     tracks: [
       {
         id: 'drums',
@@ -658,6 +833,7 @@ function buildAcidProject(id = createProjectId()): Project {
         instrumentId: 'drums',
         mute: false,
         gain: 0.88,
+        kit: '808',
         notes: generateDrumPattern('fourOnFloor', 4),
       },
       {
@@ -667,58 +843,105 @@ function buildAcidProject(id = createProjectId()): Project {
         mute: false,
         gain: 0.85,
         synth: DEFAULT_SYNTH_PATCHES.acid!,
-        notes: generateMelodicPattern('acidLine', 4, 4, 'minor'),
+        notes: sortNotes(acidNotes),
       },
       {
         id: 'keys',
         name: '和弦',
         instrumentId: 'pluck',
         mute: false,
-        gain: 0.66,
-        synth: DEFAULT_SYNTH_PATCHES.pluck!,
+        gain: 0.64,
+        synth: {
+          ...presetPatch('pluck-muted'),
+          reverbMix: 0.45,
+          delayMix: 0.4,
+        },
         notes: sortNotes(stabs),
       },
       {
         id: 'lead',
-        name: '琶音',
+        name: '主旋律',
         instrumentId: 'lead',
         mute: false,
-        gain: 0.65,
+        gain: 0.62,
         synth: {
-          ...DEFAULT_SYNTH_PATCHES.lead!,
-          cutoff: 3800,
-          resonance: 4.5,
-          envMod: 0.65,
+          ...presetPatch('lead-bright'),
+          cutoff: 2400,
+          lfoTarget: 'filter',
+          lfoRate: 0.5,
+          lfoDepth: 0.35,
           delayMix: 0.38,
+          reverbMix: 0.3,
         },
-        notes: generateMelodicPattern('arpUp', 4, 4, 'pentatonic'),
+        notes: sortNotes(raveLead),
       },
     ],
   }
 }
 
 /**
- * 4. 8-Bit Chiptune Quest (红白机冒险 · 140 BPM · C Minor)
+ * 4. 8-Bit Chiptune Quest (红白机冒险 · 142 BPM · C Minor)
+ * Classic NES action-stage progression (Cm -> Bb -> Ab -> G7), bouncy triangle bass, rapid triad arps, and heroic pulse lead.
  */
 function buildChiptuneProject(id = createProjectId()): Project {
-  const leadNotes: Note[] = [
-    n(72, 0, 0.5, 110), n(75, 0.5, 0.5, 106), n(79, 1, 0.75, 115), n(77, 1.75, 0.25, 100),
-    n(75, 2, 0.5, 108), n(74, 2.5, 0.5, 104), n(72, 3, 1, 112),
-    n(70, 4, 0.5, 108), n(74, 4.5, 0.5, 106), n(77, 5, 0.75, 114), n(75, 5.75, 0.25, 100),
-    n(74, 6, 0.5, 106), n(70, 6.5, 0.5, 102), n(67, 7, 1, 110),
-    n(68, 8, 0.5, 110), n(72, 8.5, 0.5, 108), n(75, 9, 0.75, 116), n(80, 9.75, 0.25, 118),
-    n(79, 10, 0.5, 112), n(75, 10.5, 0.5, 106), n(74, 11, 1, 110),
-    n(72, 12, 0.5, 112), n(74, 12.5, 0.5, 108), n(75, 13, 0.5, 114), n(79, 13.5, 0.5, 118),
-    n(84, 14, 2, 120),
+  // Cm -> Bb -> Ab -> G7 bassline
+  const bassNotes: Note[] = []
+  const bassBars = [
+    [48, 48, 60, 48, 55, 60, 48, 55], // Cm (C3-C4-G3)
+    [46, 46, 58, 46, 53, 58, 46, 53], // Bb
+    [44, 44, 56, 44, 51, 56, 44, 51], // Ab
+    [43, 43, 55, 43, 50, 55, 47, 50], // G (G2-G3-D3-B2)
   ]
+  for (let bar = 0; bar < 4; bar += 1) {
+    const b = bar * 4
+    const seq = bassBars[bar]!
+    for (let i = 0; i < 8; i += 1) {
+      bassNotes.push(n(seq[i]!, b + i * 0.5, 0.25, i % 2 === 0 ? 112 : 92))
+    }
+  }
+
+  // Rapid 16th-note NES chord arps matching Cm -> Bb -> Ab -> G7
+  const arpChords = [
+    [60, 63, 67, 72], // Cm
+    [58, 62, 65, 70], // Bb
+    [56, 60, 63, 68], // Ab
+    [55, 59, 62, 67], // G
+  ]
+  const arpNotes: Note[] = []
+  for (let bar = 0; bar < 4; bar += 1) {
+    const b = bar * 4
+    const chord = arpChords[bar]!
+    for (let step = 0; step < 16; step += 1) {
+      const pitch = chord[step % 4]!
+      arpNotes.push(n(pitch, b + step * 0.25, 0.25, step % 4 === 0 ? 96 : 74))
+    }
+  }
+
+  const leadNotes: Note[] = [
+    // Bar 1 (Cm)
+    n(72, 0, 0.5, 112), n(75, 0.5, 0.5, 108), n(79, 1, 0.75, 118), n(77, 1.75, 0.25, 102),
+    n(75, 2, 0.5, 110), n(74, 2.5, 0.5, 104), n(72, 3, 1, 114),
+    // Bar 2 (Bb)
+    n(70, 4, 0.5, 110), n(74, 4.5, 0.5, 106), n(77, 5, 0.75, 116), n(75, 5.75, 0.25, 102),
+    n(74, 6, 0.5, 108), n(70, 6.5, 0.5, 102), n(67, 7, 1, 110),
+    // Bar 3 (Ab)
+    n(68, 8, 0.5, 110), n(72, 8.5, 0.5, 108), n(75, 9, 0.75, 116), n(80, 9.75, 0.25, 120),
+    n(79, 10, 0.5, 112), n(75, 10.5, 0.5, 106), n(74, 11, 1, 110),
+    // Bar 4 (G7 turnaround)
+    n(74, 12, 0.5, 114), n(77, 12.5, 0.5, 110), n(79, 13, 0.5, 116), n(83, 13.5, 0.5, 120),
+    n(84, 14, 1.5, 122), n(79, 15.5, 0.5, 106),
+  ]
+
   return {
     version: 1,
     id,
     name: '红白机冒险 · 8-Bit Quest',
-    bpm: 140,
+    bpm: 142,
     beatsPerBar: BEATS_PER_BAR,
     bars: 4,
     loop: true,
+    scaleRoot: 0,
+    scaleId: 'minor',
     tracks: [
       {
         id: 'drums',
@@ -726,6 +949,7 @@ function buildChiptuneProject(id = createProjectId()): Project {
         instrumentId: 'drums',
         mute: false,
         gain: 0.78,
+        kit: 'chip',
         notes: generateDrumPattern('breakbeat', 4),
       },
       {
@@ -734,22 +958,17 @@ function buildChiptuneProject(id = createProjectId()): Project {
         instrumentId: 'chip',
         mute: false,
         gain: 0.8,
-        synth: {
-          ...DEFAULT_SYNTH_PATCHES.chip!,
-          waveform: 'triangle',
-          subMix: 0.35,
-          cutoff: 4200,
-        },
-        notes: generateMelodicPattern('octaveBass', 4, 0, 'minor'),
+        synth: presetPatch('chip-triangle'),
+        notes: sortNotes(bassNotes),
       },
       {
         id: 'keys',
         name: '琶音',
         instrumentId: 'chip',
         mute: false,
-        gain: 0.62,
+        gain: 0.56,
         synth: DEFAULT_SYNTH_PATCHES.chip!,
-        notes: generateMelodicPattern('arpUp', 4, 0, 'minor'),
+        notes: sortNotes(arpNotes),
       },
       {
         id: 'lead',
@@ -758,8 +977,7 @@ function buildChiptuneProject(id = createProjectId()): Project {
         mute: false,
         gain: 0.78,
         synth: {
-          ...DEFAULT_SYNTH_PATCHES.chip!,
-          detune: 4,
+          ...presetPatch('chip-pulse'),
           delayMix: 0.2,
         },
         notes: sortNotes(leadNotes),
@@ -769,30 +987,67 @@ function buildChiptuneProject(id = createProjectId()): Project {
 }
 
 /**
- * 5. Cosmic Drift Ambient (深空漂流 · 96 BPM · F Major / D Minor)
+ * 5. Cosmic Drift Ambient (深空漂流 · 78 BPM · F Major / Lydian)
+ * Descending cinematic bass (F -> E -> D -> C), breathing reverb pad, and sparse asymmetrical harp & glass bell motifs.
  */
 function buildAmbientProject(id = createProjectId()): Project {
   const sparseDrums: Note[] = []
   for (let bar = 0; bar < 4; bar += 1) {
     const b = bar * 4
-    sparseDrums.push(n(DRUM_KICK, b + 0, 0.25, 92), n(DRUM_KICK, b + 0.75, 0.25, 70))
-    sparseDrums.push(n(DRUM_RIM, b + 2, 0.25, 76), n(DRUM_HAT, b + 1.5, 0.25, 58), n(DRUM_HAT, b + 3.5, 0.25, 54))
+    sparseDrums.push(n(DRUM_KICK, b + 0, 0.25, 84), n(DRUM_KICK, b + 2.5, 0.25, 64))
+    sparseDrums.push(n(DRUM_RIM, b + 2, 0.25, 70), n(DRUM_HAT, b + 1.5, 0.25, 48), n(DRUM_HAT, b + 3.5, 0.25, 44))
   }
+
+  // Descending cinematic bassline: F2 -> E2 -> D2 -> C2
+  const bassNotes: Note[] = [
+    n(41, 0, 4, 96),
+    n(40, 4, 4, 92),
+    n(38, 8, 4, 96),
+    n(36, 12, 4, 94),
+  ]
+
+  // Open-voiced lush pads: Fmaj7 -> C/E -> Dm9 -> Bbmaj7/C
+  const padChords: Note[] = [
+    n(53, 0, 3.75, 78), n(60, 0, 3.75, 76), n(64, 0, 3.75, 80), n(69, 0, 3.75, 74),
+    n(52, 4, 3.75, 76), n(60, 4, 3.75, 78), n(67, 4, 3.75, 80), n(71, 4, 3.75, 72),
+    n(50, 8, 3.75, 78), n(57, 8, 3.75, 76), n(64, 8, 3.75, 80), n(65, 8, 3.75, 74),
+    n(48, 12, 3.75, 76), n(58, 12, 3.75, 78), n(62, 12, 3.75, 80), n(65, 12, 3.75, 74),
+  ]
+
+  // Sparse, meditative harp phrases with breathing room
+  const harpNotes: Note[] = [
+    n(65, 0.5, 1, 78), n(69, 1.5, 1, 84), n(72, 2.5, 1.5, 88),
+    n(71, 4.5, 1, 80), n(67, 5.5, 1, 76), n(72, 6.75, 1.25, 84),
+    n(69, 8.5, 1, 82), n(72, 9.5, 1, 86), n(76, 10.5, 1.5, 90),
+    n(74, 12.5, 1, 82), n(72, 13.75, 1, 78), n(69, 15, 1, 74),
+  ]
+
+  // Distant glass bell sparkles
+  const bellNotes: Note[] = [
+    n(81, 1.5, 2, 76),
+    n(79, 5.5, 2, 72),
+    n(84, 9.5, 2.5, 80),
+    n(77, 13.5, 2.5, 74),
+  ]
+
   return {
     version: 1,
     id,
     name: '深空漂流 · Cosmic Drift',
-    bpm: 96,
+    bpm: 78,
     beatsPerBar: BEATS_PER_BAR,
     bars: 4,
     loop: true,
+    scaleRoot: 5,
+    scaleId: 'major',
     tracks: [
       {
         id: 'drums',
         name: '鼓',
         instrumentId: 'drums',
         mute: false,
-        gain: 0.65,
+        gain: 0.58,
+        kit: 'lofi',
         notes: sortNotes(sparseDrums),
       },
       {
@@ -800,51 +1055,105 @@ function buildAmbientProject(id = createProjectId()): Project {
         name: '贝斯',
         instrumentId: 'bass',
         mute: false,
-        gain: 0.76,
-        synth: {
-          ...DEFAULT_SYNTH_PATCHES.bass!,
-          waveform: 'sine',
-          subMix: 0.7,
-          cutoff: 320,
-          attack: 0.08,
-          release: 0.4,
-        },
-        notes: [n(41, 0, 4, 100), n(38, 4, 4, 98), n(36, 8, 4, 102), n(43, 12, 4, 96)],
+        gain: 0.78,
+        synth: presetPatch('bass-sub'),
+        notes: sortNotes(bassNotes),
       },
       {
-        id: 'keys',
+        id: 'pad',
         name: '铺底',
         instrumentId: 'pad',
         mute: false,
-        gain: 0.78,
+        gain: 0.76,
         synth: {
-          ...DEFAULT_SYNTH_PATCHES.pad!,
-          waveform: 'sawtooth',
-          detune: 22,
-          cutoff: 1450,
-          attack: 0.35,
-          release: 0.85,
-          delayMix: 0.45,
+          ...presetPatch('pad-breath'),
+          reverbMix: 0.65,
         },
-        notes: generateMelodicPattern('chords', 4, 5, 'major'),
+        notes: sortNotes(padChords),
+      },
+      {
+        id: 'pluck',
+        name: '拨弦',
+        instrumentId: 'pluck',
+        mute: false,
+        gain: 0.62,
+        synth: {
+          ...presetPatch('pluck-harp'),
+          reverbMix: 0.55,
+          delayMix: 0.42,
+        },
+        notes: sortNotes(harpNotes),
       },
       {
         id: 'lead',
         name: '铃音',
         instrumentId: 'bell',
         mute: false,
-        gain: 0.72,
-        synth: DEFAULT_SYNTH_PATCHES.bell!,
-        notes: generateMelodicPattern('arpUp', 4, 5, 'major'),
+        gain: 0.64,
+        synth: {
+          ...presetPatch('bell-glass'),
+          reverbMix: 0.6,
+        },
+        notes: sortNotes(bellNotes),
       },
     ],
   }
 }
 
 /**
- * 6. Disco House (午夜舞池 · 122 BPM · A Minor). Uses the 808 kit and the newer sounds.
+ * 6. Disco House (午夜舞池 · 122 BPM · E Dorian · Groove Swing)
+ * French-house funky progression (Em7 -> A13 -> Dmaj7 -> Bm7), syncopated slap bass, choppy clav stabs, and soaring strings.
  */
 function buildDiscoProject(id = createProjectId()): Project {
+  // Syncopated funky disco bassline in E Dorian (E2=40, A2=45, D2=38, B1? clamped -> B2=47/F#2=42)
+  const bassNotes: Note[] = [
+    // Bar 1: Em7
+    n(40, 0, 0.5, 114), n(40, 0.75, 0.25, 86), n(52, 1.5, 0.5, 108), n(47, 2, 0.5, 98),
+    n(40, 2.75, 0.5, 110), n(50, 3.5, 0.25, 96), n(52, 3.75, 0.25, 104),
+    // Bar 2: A13
+    n(45, 4, 0.5, 114), n(45, 4.75, 0.25, 86), n(57, 5.5, 0.5, 108), n(52, 6, 0.5, 98),
+    n(45, 6.75, 0.5, 110), n(43, 7.5, 0.25, 94), n(45, 7.75, 0.25, 102),
+    // Bar 3: Dmaj7
+    n(38, 8, 0.5, 114), n(38, 8.75, 0.25, 86), n(50, 9.5, 0.5, 108), n(45, 10, 0.5, 98),
+    n(38, 10.75, 0.5, 110), n(45, 11.5, 0.25, 94), n(48, 11.75, 0.25, 102),
+    // Bar 4: Bm7 -> B7 turnaround
+    n(47, 12, 0.5, 112), n(47, 12.75, 0.25, 86), n(54, 13.5, 0.5, 106), n(50, 14, 0.5, 98),
+    n(47, 14.75, 0.5, 108), n(42, 15.5, 0.25, 96), n(43, 15.75, 0.25, 104),
+  ]
+
+  // Choppy funky house chord stabs
+  const chordStabPitches = [
+    [55, 59, 62, 66], // Em9
+    [55, 57, 61, 66], // A13
+    [54, 57, 61, 64], // Dmaj9
+    [54, 57, 59, 64], // Bm11
+  ]
+  const stabRhythm = [
+    { t: 0, d: 0.5, v: 98 },
+    { t: 0.75, d: 0.25, v: 82 },
+    { t: 1.5, d: 0.5, v: 94 },
+    { t: 2.75, d: 0.25, v: 88 },
+    { t: 3.5, d: 0.25, v: 92 },
+  ]
+  const keysNotes: Note[] = []
+  for (let bar = 0; bar < 4; bar += 1) {
+    const b = bar * 4
+    const chord = chordStabPitches[bar]!
+    for (const hit of stabRhythm) {
+      for (const pitch of chord) {
+        keysNotes.push(n(pitch, b + hit.t, hit.d, hit.v))
+      }
+    }
+  }
+
+  // Soaring high-octave disco strings melody
+  const stringNotes: Note[] = [
+    n(76, 0, 2, 82), n(78, 2, 2, 84),
+    n(79, 4, 2.5, 88), n(76, 6.5, 1.5, 82),
+    n(74, 8, 2.5, 86), n(73, 10.5, 1.5, 80),
+    n(71, 12, 2, 84), n(74, 14, 1, 86), n(78, 15, 1, 90),
+  ]
+
   return {
     version: 1,
     id,
@@ -853,44 +1162,282 @@ function buildDiscoProject(id = createProjectId()): Project {
     beatsPerBar: BEATS_PER_BAR,
     bars: 4,
     loop: true,
-    scaleRoot: 9,
-    scaleId: 'minor',
+    scaleRoot: 4,
+    scaleId: 'dorian',
+    swing: 0.18,
     tracks: [
-      { id: 'drums', name: '鼓', instrumentId: 'drums', mute: false, gain: 0.85, kit: '808',
-        notes: generateDrumPattern('disco', 4) },
-      { id: 'bass', name: '贝斯', instrumentId: 'bass', mute: false, gain: 0.84,
-        synth: presetPatch('bass-pluck'), notes: generateMelodicPattern('octaveBass', 4, 9, 'minor') },
-      { id: 'pad', name: '铺底', instrumentId: 'pad', mute: false, gain: 0.6,
-        synth: presetPatch('pad-strings'), notes: generateMelodicPattern('chords', 4, 9, 'minor') },
-      { id: 'pluck', name: '琶音', instrumentId: 'pluck', mute: false, gain: 0.66,
-        synth: presetPatch('pluck-muted'), notes: generateMelodicPattern('arpUp', 4, 9, 'minor') },
+      {
+        id: 'drums',
+        name: '鼓',
+        instrumentId: 'drums',
+        mute: false,
+        gain: 0.86,
+        kit: '808',
+        notes: generateDrumPattern('disco', 4),
+      },
+      {
+        id: 'bass',
+        name: '贝斯',
+        instrumentId: 'bass',
+        mute: false,
+        gain: 0.86,
+        synth: presetPatch('bass-pluck'),
+        notes: sortNotes(bassNotes),
+      },
+      {
+        id: 'keys',
+        name: '和弦',
+        instrumentId: 'keys',
+        mute: false,
+        gain: 0.66,
+        synth: {
+          ...presetPatch('keys-clav'),
+          reverbMix: 0.22,
+        },
+        notes: sortNotes(keysNotes),
+      },
+      {
+        id: 'pad',
+        name: '铺底',
+        instrumentId: 'pad',
+        mute: false,
+        gain: 0.56,
+        synth: {
+          ...presetPatch('pad-strings'),
+          reverbMix: 0.38,
+        },
+        notes: sortNotes(stringNotes),
+      },
     ],
   }
 }
 
 /**
- * 7. Tape Sunset (磁带黄昏 · 78 BPM · D Dorian). Uses the lo-fi kit.
+ * 7. Tape Sunset (磁带黄昏 · 76 BPM · Eb Major · Tape Swing)
+ * Warm nostalgic ballad (Ebmaj7 -> Cm9 -> Abmaj7 -> Bb13sus4) with rolled tremolo keys and wistful music-box melody.
  */
 function buildTapeProject(id = createProjectId()): Project {
+  // Sparse dusty downtempo beat
+  const drums: Note[] = []
+  for (let bar = 0; bar < 4; bar += 1) {
+    const b = bar * 4
+    drums.push(n(DRUM_KICK, b + 0, 0.25, 102), n(DRUM_KICK, b + 1.5, 0.25, 80), n(DRUM_KICK, b + 2.75, 0.25, 92))
+    drums.push(n(DRUM_SNARE, b + 1, 0.25, 92), n(DRUM_RIM, b + 3, 0.25, 86))
+    for (const h of [0.5, 1.5, 2, 2.5, 3.5]) {
+      drums.push(n(DRUM_HAT, b + h, 0.25, 58))
+    }
+  }
+
+  // Slow warm sub bass with 5th pickups
+  const bassNotes: Note[] = [
+    n(39, 0, 2.75, 102), n(46, 3, 1, 86), // Eb2 -> Bb2
+    n(36, 4, 2.75, 104), n(43, 7, 1, 86), // C2 -> G2
+    n(44, 8, 2.75, 100), n(43, 11, 1, 84), // Ab2 -> G2
+    n(46, 12, 2.5, 102), n(41, 14.5, 1.5, 88), // Bb2 -> F2
+  ]
+
+  // Rolled Rhodes chords (each note enters 0.25 beat apart like a gentle hand-strummed chord)
+  const keysNotes: Note[] = [
+    // Bar 1: Ebmaj7 (Eb3, G3, Bb3, D4)
+    n(51, 0, 3.75, 78), n(55, 0.25, 3.5, 76), n(58, 0.5, 3.25, 80), n(62, 0.75, 3, 82),
+    // Bar 2: Cm9 (C3, G3, Bb3, D4, Eb4)
+    n(48, 4, 3.75, 80), n(55, 4.25, 3.5, 76), n(58, 4.5, 3.25, 78), n(62, 4.75, 3, 82), n(63, 5, 2.75, 74),
+    // Bar 3: Abmaj7 (Ab3, C4, Eb4, G4)
+    n(56, 8, 3.75, 78), n(60, 8.25, 3.5, 76), n(63, 8.5, 3.25, 80), n(67, 8.75, 3, 82),
+    // Bar 4: Bb13sus4 -> Bb7 (Bb3, Eb4, G4, Ab4)
+    n(58, 12, 3.75, 78), n(63, 12.25, 3.5, 76), n(67, 12.5, 3.25, 80), n(68, 12.75, 1.25, 76), n(62, 14, 1.75, 78),
+  ]
+
+  // Wistful music-box melody in Eb Major
+  const bellNotes: Note[] = [
+    n(74, 0.5, 1, 86), n(75, 1.5, 0.75, 92), n(79, 2.5, 1.25, 94),
+    n(77, 4.5, 1, 88), n(75, 5.5, 0.75, 82), n(74, 6.5, 1.25, 84),
+    n(72, 8.5, 1, 86), n(75, 9.5, 0.75, 90), n(79, 10.5, 1.25, 94),
+    n(77, 12.5, 1.5, 92), n(74, 14.5, 1.5, 84),
+  ]
+
   return {
     version: 1,
     id,
     name: '磁带黄昏 · Tape Sunset',
-    bpm: 78,
+    bpm: 76,
     beatsPerBar: BEATS_PER_BAR,
     bars: 4,
     loop: true,
-    scaleRoot: 2,
-    scaleId: 'dorian',
+    scaleRoot: 3,
+    scaleId: 'major',
+    swing: 0.32,
     tracks: [
-      { id: 'drums', name: '鼓', instrumentId: 'drums', mute: false, gain: 0.8, kit: 'lofi',
-        notes: generateDrumPattern('lofi', 4) },
-      { id: 'bass', name: '贝斯', instrumentId: 'bass', mute: false, gain: 0.82,
-        synth: presetPatch('bass-sub'), notes: generateMelodicPattern('octaveBass', 4, 2, 'dorian') },
-      { id: 'keys', name: '和弦', instrumentId: 'keys', mute: false, gain: 0.66,
-        synth: presetPatch('keys-warm'), notes: generateMelodicPattern('chords', 4, 2, 'dorian') },
-      { id: 'bell', name: '琶音', instrumentId: 'bell', mute: false, gain: 0.5,
-        synth: presetPatch('bell-box'), notes: generateMelodicPattern('arpUp', 4, 2, 'dorian') },
+      {
+        id: 'drums',
+        name: '鼓',
+        instrumentId: 'drums',
+        mute: false,
+        gain: 0.78,
+        kit: 'lofi',
+        notes: sortNotes(drums),
+      },
+      {
+        id: 'bass',
+        name: '贝斯',
+        instrumentId: 'bass',
+        mute: false,
+        gain: 0.82,
+        synth: presetPatch('bass-sub'),
+        notes: sortNotes(bassNotes),
+      },
+      {
+        id: 'keys',
+        name: '和弦',
+        instrumentId: 'keys',
+        mute: false,
+        gain: 0.68,
+        synth: {
+          ...presetPatch('keys-tremolo'),
+          reverbMix: 0.35,
+        },
+        notes: sortNotes(keysNotes),
+      },
+      {
+        id: 'bell',
+        name: '主旋律',
+        instrumentId: 'bell',
+        mute: false,
+        gain: 0.62,
+        synth: {
+          ...presetPatch('bell-box'),
+          lfoTarget: 'pitch',
+          lfoRate: 1.2,
+          lfoDepth: 0.1,
+          reverbMix: 0.45,
+        },
+        notes: sortNotes(bellNotes),
+      },
+    ],
+  }
+}
+
+/**
+ * 8. Future 808 (暗涌 808 · 136 BPM half-time · F Minor)
+ * Half-time trap snare on beat 2, rapid 16th hi-hat stutter rolls, booming 808 sub, LFO-pumped Future Bass chords, and dark bell motif.
+ */
+function buildTrapProject(id = createProjectId()): Project {
+  const drums: Note[] = []
+  for (let bar = 0; bar < 4; bar += 1) {
+    const b = bar * 4
+    // Half-time kick & snare/clap on beat 2
+    drums.push(n(DRUM_KICK, b + 0, 0.25, 118), n(DRUM_KICK, b + 0.75, 0.25, 100), n(DRUM_KICK, b + 2.5, 0.25, 112))
+    if (bar % 2 === 1) {
+      drums.push(n(DRUM_KICK, b + 3.5, 0.25, 102))
+    }
+    drums.push(n(DRUM_SNARE, b + 2, 0.25, 112), n(DRUM_CLAP, b + 2, 0.25, 104))
+
+    // Steady 8th hats + rapid 16th stutter rolls on beat 1.5 and 3.5
+    for (let i = 0; i < 8; i += 1) {
+      drums.push(n(DRUM_HAT, b + i * 0.5, 0.25, i % 2 === 0 ? 78 : 60))
+    }
+    drums.push(n(DRUM_HAT, b + 1.75, 0.25, 68), n(DRUM_HAT, b + 3.25, 0.25, 72), n(DRUM_HAT, b + 3.75, 0.25, 86))
+    if (bar === 3) {
+      drums.push(n(DRUM_OPEN_HAT, b + 3.5, 0.5, 82))
+    }
+  }
+
+  // Booming 808 sub matching kick hits: Fm -> Db -> Ab -> Eb
+  const bassRoots = [41, 37, 44, 39]
+  const bassNotes: Note[] = []
+  for (let bar = 0; bar < 4; bar += 1) {
+    const b = bar * 4
+    const root = bassRoots[bar]!
+    bassNotes.push(n(root, b + 0, 0.75, 118), n(root, b + 0.75, 1.25, 108), n(root + 12, b + 2.5, 1, 112))
+  }
+
+  // LFO-pumped Future Bass chord swells
+  const futureChords = [
+    [53, 60, 65, 68, 72], // Fm9
+    [49, 56, 60, 65, 68], // Dbmaj7
+    [56, 60, 63, 67, 72], // Abmaj7
+    [55, 58, 63, 67, 70], // Eb6
+  ]
+  const padNotes: Note[] = []
+  for (let bar = 0; bar < 4; bar += 1) {
+    const b = bar * 4
+    for (const pitch of futureChords[bar]!) {
+      padNotes.push(n(pitch, b, 3.75, 82))
+    }
+  }
+
+  // Haunting trap bell counter-melody
+  const bellNotes: Note[] = [
+    n(77, 0, 0.5, 96), n(80, 1, 0.5, 92), n(79, 2, 0.5, 88), n(77, 3, 0.5, 84),
+    n(73, 4, 0.5, 94), n(77, 5, 0.5, 90), n(75, 6, 1, 86),
+    n(80, 8, 0.5, 98), n(84, 9, 0.5, 102), n(79, 10, 1, 90),
+    n(75, 12, 0.5, 94), n(79, 13, 0.5, 90), n(77, 14, 1.5, 96),
+  ]
+
+  return {
+    version: 1,
+    id,
+    name: '暗涌 808 · Future Trap',
+    bpm: 136,
+    beatsPerBar: BEATS_PER_BAR,
+    bars: 4,
+    loop: true,
+    scaleRoot: 5,
+    scaleId: 'minor',
+    tracks: [
+      {
+        id: 'drums',
+        name: '鼓',
+        instrumentId: 'drums',
+        mute: false,
+        gain: 0.9,
+        kit: '808',
+        notes: sortNotes(drums),
+      },
+      {
+        id: 'bass',
+        name: '808 Sub',
+        instrumentId: 'bass',
+        mute: false,
+        gain: 0.88,
+        synth: {
+          ...presetPatch('bass-sub'),
+          drive: 0.25,
+          decay: 0.55,
+          release: 0.25,
+        },
+        notes: sortNotes(bassNotes),
+      },
+      {
+        id: 'pad',
+        name: '和弦',
+        instrumentId: 'pad',
+        mute: false,
+        gain: 0.62,
+        synth: {
+          ...DEFAULT_SYNTH_PATCHES.pad!,
+          cutoff: 2600,
+          attack: 0.05,
+          lfoTarget: 'amp',
+          lfoRate: 4.5,
+          lfoDepth: 0.45,
+          reverbMix: 0.42,
+        },
+        notes: sortNotes(padNotes),
+      },
+      {
+        id: 'bell',
+        name: '铃音',
+        instrumentId: 'bell',
+        mute: false,
+        gain: 0.64,
+        synth: {
+          ...DEFAULT_SYNTH_PATCHES.bell!,
+          reverbMix: 0.5,
+          delayMix: 0.35,
+        },
+        notes: sortNotes(bellNotes),
+      },
     ],
   }
 }
@@ -907,8 +1454,8 @@ export const SONG_PRESETS: readonly SongPresetItem[] = [
   {
     id: 'lofi',
     title: '雨夜自习室',
-    subtitle: 'Lo-Fi Chill · 88 BPM',
-    bpm: 88,
+    subtitle: 'Lo-Fi Chill · 86 BPM',
+    bpm: 86,
     accent: '#f97316',
     build: buildLofiProject,
   },
@@ -923,16 +1470,16 @@ export const SONG_PRESETS: readonly SongPresetItem[] = [
   {
     id: 'chiptune',
     title: '红白机冒险',
-    subtitle: '8-Bit · 140 BPM',
-    bpm: 140,
+    subtitle: '8-Bit · 142 BPM',
+    bpm: 142,
     accent: '#ec4899',
     build: buildChiptuneProject,
   },
   {
     id: 'ambient',
     title: '深空漂流',
-    subtitle: 'Ambient · 96 BPM',
-    bpm: 96,
+    subtitle: 'Ambient · 78 BPM',
+    bpm: 78,
     accent: '#14b8a6',
     build: buildAmbientProject,
   },
@@ -947,10 +1494,18 @@ export const SONG_PRESETS: readonly SongPresetItem[] = [
   {
     id: 'tape',
     title: '磁带黄昏',
-    subtitle: 'Tape Sunset · 78 BPM',
-    bpm: 78,
+    subtitle: 'Tape Sunset · 76 BPM',
+    bpm: 76,
     accent: '#f59e0b',
     build: buildTapeProject,
+  },
+  {
+    id: 'trap',
+    title: '暗涌 808',
+    subtitle: 'Future Trap · 136 BPM',
+    bpm: 136,
+    accent: '#ef4444',
+    build: buildTrapProject,
   },
 ]
 
@@ -959,14 +1514,25 @@ export function createStarterProject(id = createProjectId()): Project {
 }
 
 export function generateRandomGrooveProject(id = createProjectId()): Project {
-  const roots = [0, 2, 4, 5, 7, 9]
+  const roots = [0, 2, 3, 4, 5, 7, 9]
   const root = roots[Math.floor(Math.random() * roots.length)] ?? 9
   const scaleChoices = ['minor', 'dorian', 'pentatonic', 'major'] as const
   const scaleId = scaleChoices[Math.floor(Math.random() * scaleChoices.length)] ?? 'minor'
+  const progressions: ReadonlyArray<readonly number[]> = [
+    [0, 5, 2, 6],
+    [0, 3, 4, 0],
+    [0, 4, 5, 3],
+    [0, 2, 5, 4],
+    [0, 6, 3, 4],
+  ]
+  const prog = progressions[Math.floor(Math.random() * progressions.length)] ?? [0, 5, 2, 6]
   const drumPatterns: DrumPatternId[] = ['synthwave', 'fourOnFloor', 'lofi', 'breakbeat', 'disco']
   const drumPattern = drumPatterns[Math.floor(Math.random() * drumPatterns.length)] ?? 'synthwave'
-  const bpmPool = [92, 105, 116, 124, 128, 135]
+  const kitChoices = ['classic', '808', 'lofi', 'chip'] as const
+  const kit = kitChoices[Math.floor(Math.random() * kitChoices.length)] ?? 'classic'
+  const bpmPool = [84, 96, 108, 118, 124, 132, 138]
   const bpm = bpmPool[Math.floor(Math.random() * bpmPool.length)] ?? 120
+  const swing = drumPattern === 'lofi' ? 0.28 : drumPattern === 'disco' ? 0.16 : undefined
   const bassChoices = ['acid', 'bass'] as const
   const bassInst = bassChoices[Math.floor(Math.random() * bassChoices.length)] ?? 'bass'
   const leadChoices = ['lead', 'pluck', 'bell', 'chip'] as const
@@ -981,6 +1547,9 @@ export function generateRandomGrooveProject(id = createProjectId()): Project {
     beatsPerBar: BEATS_PER_BAR,
     bars: 4,
     loop: true,
+    scaleRoot: root,
+    scaleId,
+    ...(swing !== undefined ? { swing } : {}),
     tracks: [
       {
         id: 'drums',
@@ -988,6 +1557,7 @@ export function generateRandomGrooveProject(id = createProjectId()): Project {
         instrumentId: 'drums',
         mute: false,
         gain: 0.84,
+        kit,
         notes: generateDrumPattern(drumPattern, 4),
       },
       {
@@ -997,16 +1567,16 @@ export function generateRandomGrooveProject(id = createProjectId()): Project {
         mute: false,
         gain: 0.82,
         synth: DEFAULT_SYNTH_PATCHES[bassInst],
-        notes: generateMelodicPattern(bassInst === 'acid' ? 'acidLine' : 'octaveBass', 4, root, scaleId),
+        notes: generateMelodicPattern(bassInst === 'acid' ? 'acidLine' : 'octaveBass', 4, root, scaleId, prog),
       },
       {
         id: 'keys',
         name: '和弦',
         instrumentId: 'pad',
         mute: false,
-        gain: 0.68,
+        gain: 0.64,
         synth: DEFAULT_SYNTH_PATCHES.pad,
-        notes: generateMelodicPattern('chords', 4, root, scaleId),
+        notes: generateMelodicPattern('chords', 4, root, scaleId, prog),
       },
       {
         id: 'lead',
@@ -1015,7 +1585,7 @@ export function generateRandomGrooveProject(id = createProjectId()): Project {
         mute: false,
         gain: 0.74,
         synth: DEFAULT_SYNTH_PATCHES[leadInst],
-        notes: generateMelodicPattern('randomRiff', 4, root, scaleId),
+        notes: generateMelodicPattern('randomRiff', 4, root, scaleId, prog),
       },
     ],
   }

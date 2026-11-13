@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { createDefaultProject, type Project } from '../src/schema.ts'
 import { MIDI_PPQ, projectToMidi } from '../src/client/midi.ts'
+import { parseMidiMessage } from '../src/client/midi-input.ts'
 import { encodeWav } from '../src/client/render.ts'
 
 function ascii(bytes: Uint8Array, offset: number, length: number): string {
@@ -94,5 +95,16 @@ describe('WAV export', () => {
     expect(samples[0]).toBeCloseTo(0.125, 3)
     expect(samples[1]).toBeCloseTo(-0.5, 3)
     expect(samples[2]).toBeCloseTo(0.25, 3)
+  })
+})
+
+describe('MIDI input', () => {
+  it('parses Note On / Note Off messages and clamps pitch into grid range', () => {
+    expect(parseMidiMessage(new Uint8Array([0x92, 60, 110]))).toEqual({ type: 'noteOn', pitch: 60, velocity: 110 })
+    expect(parseMidiMessage(new Uint8Array([0x90, 60, 0]))).toEqual({ type: 'noteOff', pitch: 60 })
+    expect(parseMidiMessage(new Uint8Array([0x80, 72, 64]))).toEqual({ type: 'noteOff', pitch: 72 })
+    expect(parseMidiMessage(new Uint8Array([0x90, 20, 90]))).toEqual({ type: 'noteOn', pitch: 36, velocity: 90 })
+    expect(parseMidiMessage(new Uint8Array([0x90, 108, 90]))).toEqual({ type: 'noteOn', pitch: 84, velocity: 90 })
+    expect(parseMidiMessage(new Uint8Array([0xb0, 1, 64]))).toBeNull()
   })
 })

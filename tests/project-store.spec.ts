@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Project } from '../src/schema.ts'
 import { saveProject } from '../src/client/api.ts'
 import { DEFAULT_SYNTH_PATCHES } from '../src/client/instruments.ts'
-import { SONG_PRESETS } from '../src/client/presets.ts'
+import { buildScaleChord, SONG_PRESETS } from '../src/client/presets.ts'
 import { ProjectClient } from '../src/client/project-store.ts'
 
 /** Minimal in-memory localStorage. */
@@ -354,5 +354,45 @@ describe('project client', () => {
     await vi.advanceTimersByTimeAsync(1000)
     expect(old.saved.get(legacy.getState().project.id)?.swing).toBeUndefined()
     expect(legacy.getState().project.swing).toBe(0.2)
+  })
+
+  it('doubles bars with duplicateBars, tiles bar 1 with repeatFirstBar, and stamps scale chords', async () => {
+    installHost()
+    const client = new ProjectClient()
+    await client.newProject(true)
+    const track = client.getState().project.tracks[1]
+    if (track === undefined) throw new Error('track missing')
+
+    // Build a C major triad and seventh chord, and insert as one undo step
+    expect(buildScaleChord(60, 0, 'major', 'single')).toEqual([60])
+    expect(buildScaleChord(60, 0, 'major', 'triad')).toEqual([60, 64, 67])
+    expect(buildScaleChord(60, 0, 'major', 'seventh')).toEqual([60, 64, 67, 71])
+    expect(buildScaleChord(57, 9, 'minor', 'triad')).toEqual([57, 60, 64])
+
+    const chord = buildScaleChord(60, 0, 'major', 'triad').map((pitch) => ({
+      pitch,
+      startBeat: 0,
+      durationBeats: 1,
+      velocity: 96,
+    }))
+    client.upsertTrackNotes(track.id, chord)
+    expect(client.getState().project.tracks[1]?.notes).toHaveLength(3)
+
+    // Repeat bar 1 across 4 bars
+    client.repeatFirstBar(track.id)
+    expect(client.getState().project.tracks[1]?.notes.map((n) => n.startBeat)).toEqual([
+      0, 0, 0, 4, 4, 4, 8, 8, 8, 12, 12, 12,
+    ])
+
+    // Double 4 bars to 8 bars
+    client.duplicateBars()
+    expect(client.getState().project.bars).toBe(8)
+    expect(client.getState().project.tracks[1]?.notes).toHaveLength(24)
+    expect(client.getState().project.tracks[1]?.notes.at(-1)?.startBeat).toBe(28)
+
+    // Undo duplicateBars restores 4 bars
+    client.undo()
+    expect(client.getState().project.bars).toBe(4)
+    expect(client.getState().project.tracks[1]?.notes).toHaveLength(12)
   })
 })

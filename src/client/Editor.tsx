@@ -1,8 +1,10 @@
 import { useEffect, useState } from 'react'
-import { MAX_SWING, MAX_TRACKS } from '../model.ts'
+import { isTrackAudible, MAX_BARS, MAX_SWING, MAX_TRACKS } from '../model.ts'
+import { auditionBase, auditionPitch } from './audition.ts'
 import { getEngine } from './engine.ts'
 import { Icon } from './icons.tsx'
 import { INSTRUMENT_LABELS, listInstruments } from './instruments.ts'
+import { connectMidiInput } from './midi-input.ts'
 import { PianoRoll } from './PianoRoll.tsx'
 import { Popover } from './Popover.tsx'
 import { ProjectPanel } from './ProjectPanel.tsx'
@@ -49,17 +51,111 @@ export function Editor(): JSX.Element {
     void store.hydrate()
   }, [store])
   useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent): void => {
-      if (event.code !== 'KeyZ' || !(event.metaKey || event.ctrlKey) || event.shiftKey || event.altKey) return
-      // Text fields keep their own native undo.
-      const target = event.target
-      if (target instanceof HTMLElement && target.closest('input, select, textarea') !== null) return
-      event.preventDefault()
-      store.undo()
+    const heldKeys = new Map<string, number>()
+    const isTextField = (target: EventTarget | null): boolean => {
+      if (!(target instanceof HTMLElement)) return false
+      if (target.isContentEditable) return true
+      if (target.closest('textarea, select') !== null) return true
+      const input = target.closest('input')
+      return input !== null && input.type !== 'range' && input.type !== 'button' && input.type !== 'checkbox'
     }
+
+    const onKeyDown = (event: KeyboardEvent): void => {
+      if (event.code === 'KeyZ' && (event.metaKey || event.ctrlKey) && !event.shiftKey && !event.altKey) {
+        if (isTextField(event.target)) return
+        event.preventDefault()
+        store.undo()
+        return
+      }
+      if (event.repeat || event.metaKey || event.ctrlKey || event.altKey) return
+      if (isTextField(event.target)) return
+
+      const current = store.getState()
+      const track = current.project.tracks.find((t) => t.id === current.selectedTrackId) ?? current.project.tracks[0]
+
+      if (event.code === 'Space') {
+        event.preventDefault()
+        engine.togglePlay()
+        return
+      }
+      if (event.code === 'KeyZ') {
+        event.preventDefault()
+        store.setOctaveOffset(current.octaveOffset - 1)
+        return
+      }
+      if (event.code === 'KeyX') {
+        event.preventDefault()
+        store.setOctaveOffset(current.octaveOffset + 1)
+        return
+      }
+      if (event.code === 'KeyR') {
+        event.preventDefault()
+        store.setRecordArm(!current.recordArm)
+        return
+      }
+      if (event.code.startsWith('Digit')) {
+        const idx = Number(event.code.slice(5)) - 1
+        const targetTrack = current.project.tracks[idx]
+        if (idx >= 0 && idx < 8 && targetTrack !== undefined) {
+          event.preventDefault()
+          store.selectTrack(targetTrack.id)
+          return
+        }
+      }
+      if (track === undefined) return
+      const pitch = auditionPitch(event.code, auditionBase(track.instrumentId, current.octaveOffset))
+      if (pitch === null) return
+      event.preventDefault()
+      heldKeys.set(event.code, pitch)
+      store.setActivePreviewPitch(pitch)
+      engine.previewDown(track.instrumentId, pitch, track.synth)
+    }
+
+    const onKeyUp = (event: KeyboardEvent): void => {
+      const pitch = heldKeys.get(event.code)
+      if (pitch === undefined) return
+      heldKeys.delete(event.code)
+      engine.previewUp(pitch)
+      if (store.getState().activePreviewPitch === pitch) {
+        store.setActivePreviewPitch(null)
+      }
+    }
+
+    const releaseAll = (): void => {
+      for (const pitch of heldKeys.values()) engine.previewUp(pitch)
+      heldKeys.clear()
+      store.setActivePreviewPitch(null)
+    }
+
     window.addEventListener('keydown', onKeyDown)
-    return () => { window.removeEventListener('keydown', onKeyDown) }
-  }, [store])
+    window.addEventListener('keyup', onKeyUp)
+    window.addEventListener('blur', releaseAll)
+    return () => {
+      releaseAll()
+      window.removeEventListener('keydown', onKeyDown)
+      window.removeEventListener('keyup', onKeyUp)
+      window.removeEventListener('blur', releaseAll)
+    }
+  }, [engine, store])
+
+  useEffect(() => {
+    return connectMidiInput(
+      (msg) => {
+        const current = store.getState()
+        const track = current.project.tracks.find((t) => t.id === current.selectedTrackId) ?? current.project.tracks[0]
+        if (msg.type === 'noteOn' && track !== undefined) {
+          store.setActivePreviewPitch(msg.pitch)
+          engine.previewDown(track.instrumentId, msg.pitch, track.synth, msg.velocity)
+        } else if (msg.type === 'noteOff') {
+          engine.previewUp(msg.pitch)
+          if (store.getState().activePreviewPitch === msg.pitch) {
+            store.setActivePreviewPitch(null)
+          }
+        }
+      },
+      (names) => { store.setMidiDevices(names) },
+    )
+  }, [engine, store])
 
   if (!state.ready) {
     return (
@@ -99,8 +195,19 @@ export function Editor(): JSX.Element {
           </label>
           <label className="dsyn-label">
             小节
-            <NumberField ariaLabel="小节数" min={1} max={32} value={project.bars} width={48} onCommit={(value) => { store.setBars(value) }} />
+            <NumberField ariaLabel="小节数" min={1} max={MAX_BARS} value={project.bars} width={48} onCommit={(value) => { store.setBars(value) }} />
           </label>
+          <button
+            type="button"
+            aria-label="小节翻倍"
+            title="将小节数和全部音轨内容翻倍（可撤销）"
+            disabled={project.bars * 2 > MAX_BARS}
+            onClick={() => { store.duplicateBars() }}
+            className="dsyn-btn is-small"
+            style={{ fontFamily: 'var(--s-mono)' }}
+          >
+            ×2
+          </button>
           <label className="dsyn-label" title="把每拍里第二、第四个十六分音符往后推。33 是三连音的摇摆感">
             摇摆
             <NumberField
@@ -163,8 +270,9 @@ export function Editor(): JSX.Element {
                 <dl>
                   <dt>画音符</dt><dd>在格子上点击，或向右拖出长音；再点一次擦除</dd>
                   <dt>定位</dt><dd>点击顶部小节标尺跳到该位置</dd>
-                  <dt><kbd>空格</kbd></dt><dd>播放 / 暂停（焦点在网格时）</dd>
-                  <dt><kbd>A</kbd>–<kbd>L</kbd></dt><dd>用电脑键盘弹奏，<kbd>Z</kbd> <kbd>X</kbd> 切换八度</dd>
+                  <dt><kbd>空格</kbd></dt><dd>随时播放 / 暂停</dd>
+                  <dt><kbd>A</kbd>–<kbd>P</kbd></dt><dd>随时用电脑键盘弹奏，<kbd>Z</kbd> <kbd>X</kbd> 切换八度，支持 USB MIDI 键盘</dd>
+                  <dt><kbd>1</kbd>–<kbd>8</kbd> / <kbd>R</kbd></dt><dd>快速切换音轨 / 开关「边弹边录」</dd>
                   <dt><kbd>⌘Z</kbd></dt><dd>撤销上一步</dd>
                   <dt>工程</dt><dd>点击工程名可切换、复制、导出、导入；改动会自动保存</dd>
                   <dt>后台播放</dt><dd>回到对话后音乐继续，侧栏底部可暂停和静音</dd>
@@ -188,11 +296,12 @@ export function Editor(): JSX.Element {
         <aside aria-label="音轨" className="dsyn-tracks">
           {project.tracks.map((track) => {
             const active = track.id === selected.id
+            const dimmed = !isTrackAudible(track, project.tracks)
             return (
               <div
                 key={track.id}
                 onClick={() => { store.selectTrack(track.id) }}
-                className={`dsyn-track${active ? ' is-selected' : ''}${track.mute ? ' is-muted' : ''}`}
+                className={`dsyn-track${active ? ' is-selected' : ''}${dimmed ? ' is-muted' : ''}`}
                 style={{ '--s-track': trackColor(track.instrumentId) } as React.CSSProperties}
               >
                 <div className="dsyn-track-row">
@@ -205,6 +314,20 @@ export function Editor(): JSX.Element {
                     }}
                     className="dsyn-field is-quiet dsyn-track-name"
                   />
+                  <button
+                    type="button"
+                    aria-label={`独奏${track.name}`}
+                    aria-pressed={track.solo === true}
+                    title={track.solo ? '取消独奏' : '独奏此音轨'}
+                    onClick={(event) => {
+                      event.stopPropagation()
+                      store.updateTrack(track.id, { solo: track.solo ? undefined : true })
+                    }}
+                    className="dsyn-btn is-small is-icon is-solo"
+                    style={{ fontFamily: 'var(--s-mono)' }}
+                  >
+                    S
+                  </button>
                   <button
                     type="button"
                     aria-label={`静音${track.name}`}

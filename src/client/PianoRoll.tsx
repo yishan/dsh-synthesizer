@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import {
+  BEATS_PER_BAR,
   DRUM_PITCHES,
   PITCH_MAX,
   PITCH_MIN,
@@ -7,11 +8,12 @@ import {
   type Note,
   type Track,
 } from '../model.ts'
-import { auditionBase, auditionPitch } from './audition.ts'
+import { auditionBase } from './audition.ts'
 import { getEngine } from './engine.ts'
 import { Icon } from './icons.tsx'
 import { DRUM_LABELS } from './instruments.ts'
 import {
+  buildScaleChord,
   DRUM_PATTERN_LIST,
   generateDrumPattern,
   generateMelodicPattern,
@@ -20,6 +22,7 @@ import {
   ROOT_NOTES,
   SCALES,
   transposeNotes,
+  type ChordBrushMode,
 } from './presets.ts'
 import { getProjectStore } from './project-store.ts'
 import { trackColor } from './styles.ts'
@@ -61,6 +64,12 @@ const TABS: ReadonlyArray<{ id: DrawerTab; label: string }> = [
   { id: 'keys', label: '弹奏' },
 ]
 
+const BRUSH_MODES: ReadonlyArray<{ id: ChordBrushMode; label: string }> = [
+  { id: 'single', label: '单音' },
+  { id: 'triad', label: '三和弦' },
+  { id: 'seventh', label: '七和弦' },
+]
+
 /**
  * Editor for the selected track: the note grid, with a drawer underneath for
  * everything that acts on the track (sound, pattern tools, live playing).
@@ -79,8 +88,10 @@ export function PianoRoll({ track, bars, playing }: { track: Track; bars: number
   const [tab, setTab] = useState<DrawerTab>('sound')
   const [drawerOpen, setDrawerOpen] = useState(true)
   const [velocityDrag, setVelocityDrag] = useState(false)
+  const [brushMode, setBrushMode] = useState<ChordBrushMode>('single')
 
   const drums = track.instrumentId === 'drums'
+  const hasFirstBarNotes = track.notes.some((n) => n.startBeat < BEATS_PER_BAR)
   const rowHeight = drums ? DRUM_ROW : MELODIC_ROW
   const steps = bars * 16
   const pitches: number[] = []
@@ -117,19 +128,29 @@ export function PianoRoll({ track, bars, playing }: { track: Track; bars: number
       if (drag.mode === 'draw') {
         const minStep = Math.min(drag.startStep, drag.currentStep)
         const maxStep = Math.max(drag.startStep, drag.currentStep)
-        store.upsertTrackNote(track.id, {
-          pitch: drag.pitch,
-          startBeat: minStep * STEP_BEATS,
-          durationBeats: drums ? STEP_BEATS : Math.max(STEP_BEATS, (maxStep - minStep + 1) * STEP_BEATS),
-          velocity: 104,
-        })
+        const startBeat = minStep * STEP_BEATS
+        const durationBeats = drums ? STEP_BEATS : Math.max(STEP_BEATS, (maxStep - minStep + 1) * STEP_BEATS)
+        if (!drums && brushMode !== 'single') {
+          const chordPitches = buildScaleChord(drag.pitch, state.scaleRoot, state.scaleId, brushMode)
+          store.upsertTrackNotes(
+            track.id,
+            chordPitches.map((pitch) => ({ pitch, startBeat, durationBeats, velocity: 96 })),
+          )
+        } else {
+          store.upsertTrackNote(track.id, {
+            pitch: drag.pitch,
+            startBeat,
+            durationBeats,
+            velocity: 104,
+          })
+        }
       }
       engine.previewUp(drag.pitch)
       setDrag(null)
     }
     window.addEventListener('mouseup', onWindowUp)
     return () => { window.removeEventListener('mouseup', onWindowUp) }
-  }, [drag, drums, engine, store, track.id])
+  }, [brushMode, drag, drums, engine, state.scaleId, state.scaleRoot, store, track.id])
 
   // Velocity lane: one bar per step that has notes; a chord shares its bar.
   const stepVelocity = new Map<number, number>()
@@ -213,12 +234,6 @@ export function PianoRoll({ track, bars, playing }: { track: Track; bars: number
         role="application"
         aria-label={drums ? `${track.name} 鼓机步进器` : `${track.name} 钢琴卷帘`}
         data-piano-roll="dsh-synthesizer"
-        onKeyDown={(event) => {
-          onKey(event, track.instrumentId, state.octaveOffset, track.synth, true, (p) => { setActiveKeyPitch(p) })
-        }}
-        onKeyUp={(event) => {
-          onKey(event, track.instrumentId, state.octaveOffset, track.synth, false, () => { setActiveKeyPitch(null) })
-        }}
         className="dsyn-roll"
       >
         <div style={{ width: KEY_LABEL_WIDTH + steps * CELL, position: 'relative' }}>
@@ -362,21 +377,37 @@ export function PianoRoll({ track, bars, playing }: { track: Track; bars: number
 
       <section className="dsyn-drawer" aria-label={`${track.name} 工具`}>
         <div className="dsyn-tabs">
-          <div className="dsyn-seg" role="tablist">
-            {TABS.map((item) => (
-              <button
-                key={item.id}
-                type="button"
-                role="tab"
-                aria-selected={drawerOpen && tab === item.id}
-                onClick={() => {
-                  setDrawerOpen(!(drawerOpen && tab === item.id))
-                  setTab(item.id)
-                }}
-              >
-                {item.label}
-              </button>
-            ))}
+          <div className="dsyn-line">
+            <div className="dsyn-seg" role="tablist">
+              {TABS.map((item) => (
+                <button
+                  key={item.id}
+                  type="button"
+                  role="tab"
+                  aria-selected={drawerOpen && tab === item.id}
+                  onClick={() => {
+                    setDrawerOpen(!(drawerOpen && tab === item.id))
+                    setTab(item.id)
+                  }}
+                >
+                  {item.label}
+                </button>
+              ))}
+            </div>
+            {drums ? null : (
+              <div className="dsyn-seg" role="group" aria-label="落笔模式" title="点击网格时画单音，或自动按当前调式生成顺阶三和弦 / 七和弦">
+                {BRUSH_MODES.map((item) => (
+                  <button
+                    key={item.id}
+                    type="button"
+                    aria-pressed={brushMode === item.id}
+                    onClick={() => { setBrushMode(item.id) }}
+                  >
+                    {item.label}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
           <div className="dsyn-line">
             <button
@@ -491,6 +522,15 @@ export function PianoRoll({ track, bars, playing }: { track: Track; bars: number
                     )}
                     <button
                       type="button"
+                      title="把第 1 小节的音符平铺复制到后面所有小节（可撤销）"
+                      disabled={bars <= 1 || !hasFirstBarNotes}
+                      onClick={() => { store.repeatFirstBar(track.id) }}
+                      className="dsyn-btn"
+                    >
+                      铺满全曲
+                    </button>
+                    <button
+                      type="button"
                       title="删除本轨全部音符（可撤销）"
                       disabled={track.notes.length === 0}
                       onClick={() => { store.setTrackNotes(track.id, []) }}
@@ -506,7 +546,7 @@ export function PianoRoll({ track, bars, playing }: { track: Track; bars: number
             {tab === 'keys' ? (
               drums ? (
                 <span className="dsyn-caption">
-                  先点一下网格，再按键盘 A W S E T H U O 敲击对应鼓件；每行左侧标了按键。
+                  直接按键盘 A W S E T H U O 敲击对应鼓件{state.midiDevices.length > 0 ? ` · 已连 MIDI: ${state.midiDevices[0]}` : ''}
                 </span>
               ) : (
                 <>
@@ -530,13 +570,18 @@ export function PianoRoll({ track, bars, playing }: { track: Track; bars: number
                         高八度 <kbd>X</kbd>
                       </button>
                     </div>
-                    <span className="dsyn-caption">先点一下网格，再用电脑键盘弹奏</span>
+                    <span className="dsyn-caption">
+                      {state.midiDevices.length > 0
+                        ? `已接入 MIDI：${state.midiDevices.join('、')}`
+                        : '直接用电脑键盘弹奏，或接入 USB MIDI 键盘'}
+                    </span>
                   </div>
                   <div className="dsyn-keys">
                     {Array.from({ length: 16 }, (_, idx) => {
                       const pitch = basePitch + idx
                       const isBlack = BLACK_SEMITONES.has(pitch % 12)
                       const inScale = isPitchInScale(pitch, state.scaleRoot, state.scaleId)
+                      const isActive = activeKeyPitch === pitch || state.activePreviewPitch === pitch
                       return (
                         <button
                           key={pitch}
@@ -554,7 +599,7 @@ export function PianoRoll({ track, bars, playing }: { track: Track; bars: number
                             engine.previewUp(pitch)
                             if (activeKeyPitch === pitch) setActiveKeyPitch(null)
                           }}
-                          className={`dsyn-pkey${isBlack ? ' is-black' : ''}${inScale ? '' : ' is-off'}${activeKeyPitch === pitch ? ' is-active' : ''}`}
+                          className={`dsyn-pkey${isBlack ? ' is-black' : ''}${inScale ? '' : ' is-off'}${isActive ? ' is-active' : ''}`}
                         >
                           <span style={{ fontVariantNumeric: 'tabular-nums' }}>{pitchLabel(pitch, false)}</span>
                           <b>{QWERTY_HINT_LABELS[idx] ?? ''}</b>
@@ -570,43 +615,4 @@ export function PianoRoll({ track, bars, playing }: { track: Track; bars: number
       </section>
     </div>
   )
-}
-
-function onKey(
-  event: React.KeyboardEvent,
-  instrumentId: string,
-  octaveOffset: number,
-  synth: Track['synth'],
-  down: boolean,
-  onActivePitch: (pitch: number | null) => void,
-): void {
-  if (event.repeat || event.metaKey || event.ctrlKey || event.altKey) return
-  const target = event.target
-  if (target instanceof HTMLElement && target.closest('input, select, textarea') !== null) return
-  if (down && event.code === 'Space') {
-    event.preventDefault()
-    getEngine().togglePlay()
-    return
-  }
-  if (down && event.code === 'KeyZ') {
-    event.preventDefault()
-    getProjectStore().setOctaveOffset(octaveOffset - 1)
-    return
-  }
-  if (down && event.code === 'KeyX') {
-    event.preventDefault()
-    getProjectStore().setOctaveOffset(octaveOffset + 1)
-    return
-  }
-  const pitch = auditionPitch(event.code, auditionBase(instrumentId, octaveOffset))
-  if (pitch === null) return
-  event.preventDefault()
-  const engine = getEngine()
-  if (down) {
-    onActivePitch(pitch)
-    engine.previewDown(instrumentId, pitch, synth)
-  } else {
-    onActivePitch(null)
-    engine.previewUp(pitch)
-  }
 }

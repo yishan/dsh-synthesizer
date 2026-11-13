@@ -1,9 +1,12 @@
 /** In-memory project shared by the editor page and the sidebar transport. */
 import {
+  BEATS_PER_BAR,
   clipToBars,
   coerceProject,
   createDefaultProject,
   createProjectId,
+  MAX_BARS,
+  MAX_NOTES_PER_TRACK,
   MAX_SWING,
   MAX_TRACKS,
   removeNoteAt,
@@ -40,6 +43,8 @@ export interface SessionState {
   scaleRoot: number
   scaleId: string
   octaveOffset: number
+  activePreviewPitch: number | null
+  midiDevices: readonly string[]
   showGhostNotes: boolean
   showOnboarding: boolean
   saving: boolean
@@ -107,6 +112,8 @@ export class ProjectClient {
       scaleRoot: DEFAULT_SCALE_ROOT,
       scaleId: DEFAULT_SCALE_ID,
       octaveOffset: 0,
+      activePreviewPitch: null,
+      midiDevices: [],
       showGhostNotes: true,
       showOnboarding: false,
       saving: false,
@@ -176,13 +183,45 @@ export class ProjectClient {
     }), `erase:${trackId}`)
   }
 
+  /** Insert or update a batch of notes (such as a chord) in one undo step. */
+  upsertTrackNotes(trackId: string, notes: readonly Note[]): void {
+    if (notes.length === 0) return
+    this.mapTrack(trackId, (track) => {
+      let next = track.notes
+      for (const note of notes) next = upsertNote(next, note)
+      return { ...track, notes: next }
+    })
+  }
+
   setTrackNotes(trackId: string, notes: readonly Note[]): void {
     const maxBeats = this.state.project.bars * this.state.project.beatsPerBar
     const clipped = notes.filter((n) => n.startBeat < maxBeats && n.startBeat + n.durationBeats <= maxBeats + 1e-6)
     this.mapTrack(trackId, (track) => ({ ...track, notes: [...clipped] }))
   }
 
-  updateTrack(trackId: string, patch: Partial<Pick<Track, 'name' | 'instrumentId' | 'mute' | 'gain' | 'synth'>>): void {
+  /** Copy bar 1 of a track across every remaining bar in the loop. */
+  repeatFirstBar(trackId: string): void {
+    const bars = this.state.project.bars
+    if (bars <= 1) return
+    this.mapTrack(trackId, (track) => {
+      const barOne = track.notes.filter((n) => n.startBeat < BEATS_PER_BAR)
+      if (barOne.length === 0) return track
+      const next: Note[] = []
+      for (let bar = 0; bar < bars; bar += 1) {
+        const offset = bar * BEATS_PER_BAR
+        for (const note of barOne) {
+          const maxDur = BEATS_PER_BAR - note.startBeat
+          const durationBeats = Math.min(note.durationBeats, maxDur)
+          if (durationBeats < 0.25) continue
+          next.push({ ...note, startBeat: note.startBeat + offset, durationBeats })
+          if (next.length >= MAX_NOTES_PER_TRACK) return { ...track, notes: next }
+        }
+      }
+      return { ...track, notes: next }
+    })
+  }
+
+  updateTrack(trackId: string, patch: Partial<Pick<Track, 'name' | 'instrumentId' | 'mute' | 'solo' | 'gain' | 'synth'>>): void {
     this.mapTrack(trackId, (track) => {
       const nextInstrument = patch.instrumentId ?? track.instrumentId
       let nextSynth = patch.synth !== undefined ? patch.synth : track.synth
@@ -192,6 +231,9 @@ export class ProjectClient {
       const updated: Track = {
         ...track,
         ...patch,
+      }
+      if ('solo' in patch && patch.solo !== true) {
+        delete updated.solo
       }
       // A track still carrying its automatic name is renamed along with its instrument.
       if (patch.name === undefined && nextInstrument !== track.instrumentId && hasAutoName(track)) {
@@ -250,6 +292,17 @@ export class ProjectClient {
     this.rememberView()
   }
 
+  setActivePreviewPitch(activePreviewPitch: number | null): void {
+    if (this.state.activePreviewPitch === activePreviewPitch) return
+    this.state = { ...this.state, activePreviewPitch }
+    this.emit()
+  }
+
+  setMidiDevices(midiDevices: readonly string[]): void {
+    this.state = { ...this.state, midiDevices }
+    this.emit()
+  }
+
   setRecordArm(recordArm: boolean): void {
     this.state = { ...this.state, recordArm }
     this.emit()
@@ -276,6 +329,26 @@ export class ProjectClient {
     if (!Number.isFinite(bars)) return
     const clamped = Math.max(1, Math.min(32, Math.round(bars)))
     this.commit(clipToBars({ ...this.state.project, bars: clamped }))
+  }
+
+  /** Double the loop length and duplicate every track's notes into the second half. */
+  duplicateBars(): void {
+    const project = this.state.project
+    const nextBars = project.bars * 2
+    if (nextBars > MAX_BARS) return
+    const offset = project.bars * project.beatsPerBar
+    this.commit({
+      ...project,
+      bars: nextBars,
+      tracks: project.tracks.map((track) => {
+        const doubled = [...track.notes]
+        for (const note of track.notes) {
+          if (doubled.length >= MAX_NOTES_PER_TRACK) break
+          doubled.push({ ...note, startBeat: note.startBeat + offset })
+        }
+        return { ...track, notes: doubled }
+      }),
+    })
   }
 
   /** Swing as a fraction of a sixteenth, 0..MAX_SWING. */

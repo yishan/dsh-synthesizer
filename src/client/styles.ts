@@ -86,6 +86,11 @@ const CSS = `
   border-color: color-mix(in srgb, var(--s-danger) 45%, transparent);
   background: color-mix(in srgb, var(--s-danger) 10%, transparent);
 }
+.dsyn-btn.is-solo[aria-pressed="true"] {
+  color: #d97706;
+  border-color: color-mix(in srgb, #f59e0b 45%, transparent);
+  background: color-mix(in srgb, #f59e0b 14%, transparent);
+}
 .dsyn-field {
   height: 28px; padding: 0 8px; border-radius: 6px; min-width: 0;
   border: 1px solid var(--s-line); background: transparent; color: var(--s-fg);
@@ -270,7 +275,8 @@ const CSS = `
   color: var(--s-fg2); font: inherit; font-size: 12px; font-weight: 500; cursor: pointer;
 }
 .dsyn-seg button:hover { color: var(--s-fg); }
-.dsyn-seg button[aria-selected="true"] { background: var(--s-bg); color: var(--s-fg); box-shadow: 0 0 0 1px var(--s-line), 0 1px 2px rgba(0, 0, 0, 0.06); }
+.dsyn-seg button[aria-selected="true"],
+.dsyn-seg button[aria-pressed="true"] { background: var(--s-bg); color: var(--s-fg); box-shadow: 0 0 0 1px var(--s-line), 0 1px 2px rgba(0, 0, 0, 0.06); }
 .dsyn-panel { padding: 4px 12px 12px; overflow-y: auto; display: flex; flex-direction: column; gap: 12px; }
 .dsyn-line { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .dsyn-spread { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }

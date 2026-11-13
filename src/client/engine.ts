@@ -109,12 +109,13 @@ export class Engine {
     this.applyMute()
   }
 
-  previewDown(instrumentId: string, pitch: number, synth?: SynthPatch): void {
+  previewDown(instrumentId: string, pitch: number, synth?: SynthPatch, velocity = 105): void {
     const audio = this.ensure()
     if (audio === undefined) return
     void audio.resume()
     this.previewUp(pitch)
     this.applyMute()
+    const vel = Math.max(1, Math.min(127, Math.round(velocity)))
     const state = this.store.getState()
     const selectedTrack = state.project.tracks.find((t) => t.id === state.selectedTrackId)
     const effectiveSynth = synth ?? selectedTrack?.synth
@@ -125,7 +126,7 @@ export class Engine {
         trackId: 'preview',
         instrumentId,
         pitch,
-        velocity: 105,
+        velocity: vel,
         // Audition at the track's own level, so a quiet track previews quietly.
         gain: selectedTrack?.gain ?? 0.82,
         synth: effectiveSynth,
@@ -147,7 +148,7 @@ export class Engine {
           pitch,
           startBeat: quantizedStart,
           durationBeats: STEP_BEATS,
-          velocity: 105,
+          velocity: vel,
         })
       }
     } catch {

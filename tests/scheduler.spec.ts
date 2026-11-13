@@ -88,4 +88,13 @@ describe('scheduler', () => {
     expect(times(straight)).toEqual([[0, 0.125], [0.125, 0.25], [0.25, 0.375], [0.375, 0.5]])
     expect(times(swung)).toEqual([[0, 0.125], [0.175, 0.25], [0.25, 0.375], [0.425, 0.5]])
   })
+
+  it('silences non-soloed tracks whenever any track is soloed', () => {
+    const project = withTracks('solo', [
+      { ...track('a', 'lead', [note]), solo: true, mute: true },
+      track('b', 'bass', [{ ...note, pitch: 48 }]),
+    ], 1)
+    const step = advanceScheduler(initialSchedulerState(0, project), 0, 0.5, project, true)
+    expect(step.events.map((e) => e.trackId)).toEqual(['a'])
+  })
 })

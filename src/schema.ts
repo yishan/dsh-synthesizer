@@ -51,6 +51,7 @@ export const trackSchema = z.strictObject({
   name: z.string().min(1).max(64),
   instrumentId: z.string().min(1).max(64),
   mute: z.boolean(),
+  solo: z.boolean().optional(),
   gain: z.number().min(0).max(1),
   synth: synthPatchSchema.optional(),
   kit: z.string().regex(KIT_PATTERN).optional(),

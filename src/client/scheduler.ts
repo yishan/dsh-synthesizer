@@ -1,6 +1,6 @@
 /** Lookahead scheduler. Timing uses the audio clock, not the timer that polls it. */
 import { getInstrument, type Instrument, type ScheduledNote } from './instruments.ts'
-import { STEP_BEATS, type Project, type SynthPatch } from '../model.ts'
+import { isTrackAudible, STEP_BEATS, type Project, type SynthPatch } from '../model.ts'
 
 export interface SchedulerState {
   origin: number
@@ -63,7 +63,7 @@ function collect(
     const windowEnd = Math.min(toBeat, loopStart + loopBeats) - loopStart
     if (windowEnd <= windowStart) continue
     for (const track of project.tracks) {
-      if (track.mute || track.gain <= 0) continue
+      if (!isTrackAudible(track, project.tracks)) continue
       for (const note of track.notes) {
         if (note.startBeat < windowStart || note.startBeat >= windowEnd) continue
         const beat = loopStart + note.startBeat

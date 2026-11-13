@@ -320,6 +320,8 @@ export function Editor(): JSX.Element {
           {project.tracks.map((track) => {
             const active = track.id === selected.id
             const dimmed = !isTrackAudible(track, project.tracks)
+            const anySolo = project.tracks.some((t) => t.solo === true)
+            const effectiveMuted = track.mute || (anySolo && track.solo !== true)
             return (
               <div
                 key={track.id}
@@ -354,8 +356,8 @@ export function Editor(): JSX.Element {
                   <button
                     type="button"
                     aria-label={`静音${track.name}`}
-                    aria-pressed={track.mute}
-                    title={track.mute ? '取消静音' : '静音此音轨'}
+                    aria-pressed={effectiveMuted}
+                    title={track.mute ? '取消静音' : effectiveMuted ? '因其他音轨独奏而静音' : '静音此音轨'}
                     onClick={(event) => {
                       event.stopPropagation()
                       store.updateTrack(track.id, { mute: !track.mute })
@@ -374,7 +376,7 @@ export function Editor(): JSX.Element {
                       event.stopPropagation()
                       store.removeTrack(track.id)
                     }}
-                    className="dsyn-btn is-small is-icon is-quiet"
+                    className="dsyn-btn is-small is-icon is-quiet is-danger-hover"
                   >
                     <Icon name="close" size={14} />
                   </button>

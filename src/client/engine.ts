@@ -32,8 +32,23 @@ export class Engine {
   private pausedBeat = 0
   private reported = new Set<string>()
   private signature = ''
+  private projectId = ''
+  private unsubscribeStore: (() => void) | undefined
 
-  constructor(private readonly store: ProjectClient) {}
+  constructor(private readonly store: ProjectClient) {
+    this.projectId = store.getState().project.id
+    this.unsubscribeStore = store.subscribe(() => {
+      const nextId = this.store.getState().project.id
+      if (nextId !== this.projectId) {
+        this.projectId = nextId
+        if (this.store.getState().playing || this.timer !== undefined || this.voices.length > 0) {
+          this.pause(true)
+        } else {
+          this.pausedBeat = 0
+        }
+      }
+    })
+  }
 
   togglePlay(): void {
     if (this.store.getState().playing) {
@@ -46,7 +61,13 @@ export class Engine {
       return
     }
     void audio.resume()
+    if (this.timer !== undefined) {
+      clearInterval(this.timer)
+      this.timer = undefined
+    }
+    this.stopVoices(audio.currentTime)
     const project = this.store.getState().project
+    this.projectId = project.id
     const loopBeats = project.bars * project.beatsPerBar
     const secondsPerBeat = 60 / project.bpm
     const beat = ((this.pausedBeat % loopBeats) + loopBeats) % loopBeats
@@ -186,6 +207,8 @@ export class Engine {
   }
 
   dispose(): void {
+    this.unsubscribeStore?.()
+    this.unsubscribeStore = undefined
     this.pause(true)
     void this.audio?.close()
     this.audio = undefined

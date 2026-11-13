@@ -136,9 +136,13 @@ describe('agent tools & prompt integration', () => {
     await expect(saveTool.execute({ name: 'Empty', tracks: [] }, { signal })).rejects.toThrow(/tracks/)
   })
 
-  it('registers /synth slash command and supports list, groove, help, and error handling', async () => {
+  it('registers /synth slash command and supports prompt followup, list, groove, and help', async () => {
     const { store, tracker } = makeStore()
-    let registeredHandler: ((invocation: { rawInput: string }) => Promise<{ kind: string; text?: string }>) | undefined
+    const followups: Array<{ role: string; content: Array<{ type: string; text: string }> }> = []
+    let registeredHandler: ((invocation: {
+      rawInput: string
+      agent?: { followup?: (msg: { role: string; content: Array<{ type: string; text: string }> }) => void }
+    }) => Promise<{ kind: string; text?: string }>) | undefined
 
     const fakeCtx = {
       get(key: string) {
@@ -170,7 +174,24 @@ describe('agent tools & prompt integration', () => {
     const helpRes = await registeredHandler!({ rawInput: 'help' })
     expect(helpRes.kind).toBe('success')
 
-    const errRes = await registeredHandler!({ rawInput: 'unknown-cmd' })
-    expect(errRes.kind).toBe('error')
+    const promptRes = await registeredHandler!({
+      rawInput: '写一首 124 BPM 的 Synthwave 伴奏',
+      agent: { followup: (msg) => { followups.push(msg) } },
+    })
+    expect(promptRes.kind).toBe('success')
+    expect(followups).toHaveLength(1)
+    expect(followups[0]?.content[0]?.text).toContain('synthesizer_save_project')
+    expect(followups[0]?.content[0]?.text).toContain('124 BPM')
+
+    // Natural language starting with "groove" still routes to model instead of instant groove
+    const grooveTextRes = await registeredHandler!({
+      rawInput: 'groove style lo-fi beat',
+      agent: { followup: (msg) => { followups.push(msg) } },
+    })
+    expect(grooveTextRes.kind).toBe('success')
+    expect(followups).toHaveLength(2)
+
+    const noAgentRes = await registeredHandler!({ rawInput: '写一首 124 BPM 的 Synthwave 伴奏' })
+    expect(noAgentRes.kind).toBe('error')
   })
 })

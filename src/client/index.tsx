@@ -44,12 +44,22 @@ export const inject = ['slots']
  */
 export function apply(ctx: ClientContext): void {
   const slots = ctx.get('slots') as SlotsService | undefined
-  ;(globalThis as { __dshSynthesizer?: { version: string; mountedAt: number } }).__dshSynthesizer = {
-    version: VERSION,
-    mountedAt: Date.now(),
-  }
+  const prev = (globalThis as { __dshSynthesizer?: { version: string; mountedAt: number; dispose?: () => void } }).__dshSynthesizer
+  prev?.dispose?.()
   const store = getProjectStore()
   const engine = getEngine()
+  const disposeAll = (): void => {
+    document.removeEventListener('visibilitychange', onHide)
+    window.removeEventListener('pagehide', onPageHide)
+    store.stopSyncPolling()
+    store.flushPending()
+    engine.dispose()
+  }
+  ;(globalThis as { __dshSynthesizer?: { version: string; mountedAt: number; dispose?: () => void } }).__dshSynthesizer = {
+    version: VERSION,
+    mountedAt: Date.now(),
+    dispose: disposeAll,
+  }
   void store.hydrate()
   // The save is debounced; do not let a hidden or closing page take the last edit with it.
   const onHide = (): void => {
@@ -59,12 +69,7 @@ export function apply(ctx: ClientContext): void {
   document.addEventListener('visibilitychange', onHide)
   window.addEventListener('pagehide', onPageHide)
   if (typeof ctx.on === 'function') {
-    ctx.on('dispose', () => {
-      document.removeEventListener('visibilitychange', onHide)
-      window.removeEventListener('pagehide', onPageHide)
-      store.flushPending()
-      engine.dispose()
-    })
+    ctx.on('dispose', disposeAll)
   }
   if (slots === undefined) {
     console.error('[dsh-synthesizer] client mounted without the slots service')

@@ -86,6 +86,11 @@ const CSS = `
   border-color: color-mix(in srgb, var(--s-danger) 45%, transparent);
   background: color-mix(in srgb, var(--s-danger) 10%, transparent);
 }
+.dsyn-btn.is-danger-hover:hover:not(:disabled) {
+  color: var(--s-danger);
+  border-color: color-mix(in srgb, var(--s-danger) 45%, transparent);
+  background: color-mix(in srgb, var(--s-danger) 14%, transparent);
+}
 .dsyn-btn.is-solo[aria-pressed="true"] {
   color: #d97706;
   border-color: color-mix(in srgb, #f59e0b 45%, transparent);

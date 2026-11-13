@@ -4,6 +4,7 @@
  * Uses structural interfaces instead of importing host-only packages directly so
  * dsh-synthesizer stays compatible with minimal hosts and browser-only tests.
  */
+import { randomUUID } from 'node:crypto'
 import type { Context } from '@deepseek-ai/cordis'
 import {
   BEATS_PER_BAR,
@@ -62,12 +63,21 @@ interface SystemPromptFace {
   }) => () => void
 }
 
+interface CommandAgentFace {
+  followup?: (message: {
+    id: string
+    role: 'user'
+    content: Array<{ type: 'text'; text: string }>
+    source: { kind: 'user' }
+  }) => void
+}
+
 interface CommandsFace {
   register?: (definition: {
     name: string
     description: string
     input?: { hint: string; attachments?: boolean }
-    handler: (invocation: { rawInput: string }) => Promise<
+    handler: (invocation: { rawInput: string; agent?: CommandAgentFace }) => Promise<
       | { kind: 'success'; text?: string }
       | { kind: 'error'; text: string }
     >
@@ -461,23 +471,23 @@ export function registerSlashCommands(commandsCtx: Context, projects: ProjectSto
 
   commandsCtx.effect(() => register.call(commands, {
     name: 'synth',
-    description: '查看 dsh-synthesizer 工程列表或快速生成一段即时律动草稿',
-    input: { hint: 'list | groove [bpm] | help' },
-    handler: async ({ rawInput }) => {
+    description: '用自然语言让模型创作 dsh-synthesizer 乐曲并同步到工程，或使用 list / groove / help',
+    input: { hint: '<曲风/速度/乐器描述> | list | groove [bpm] | help' },
+    handler: async ({ rawInput, agent }) => {
       const trimmed = rawInput.trim()
-      const [sub = 'list', arg] = trimmed.split(/\s+/)
-      if (sub === '' || sub === 'list') {
+      if (trimmed === 'list') {
         const list = projects.list()
         if (list.length === 0) {
-          return { kind: 'success', text: 'dsh-synthesizer 暂无已保存工程。可直接用自然语言描述想要的曲风，或运行 `/synth groove 120`。' }
+          return { kind: 'success', text: 'dsh-synthesizer 暂无已保存工程。可直接输入 `/synth 写一段 120 BPM 的 Synthwave 伴奏` 让模型创作，或运行 `/synth groove 120`。' }
         }
         const lines = list.slice(0, 10).map((item, idx) =>
           `${idx + 1}. ${item.name} (${item.id}) — ${item.bpm} BPM, ${item.bars} 小节, ${item.tracks} 轨, ${item.notes} 音符`,
         )
         return { kind: 'success', text: `当前工程（共 ${list.length} 个）：\n${lines.join('\n')}` }
       }
-      if (sub === 'groove') {
-        const parsedBpm = arg !== undefined ? Number(arg) : 118
+      const grooveMatch = /^groove(?:\s+(\d{2,3}))?$/i.exec(trimmed)
+      if (grooveMatch !== null) {
+        const parsedBpm = grooveMatch[1] !== undefined ? Number(grooveMatch[1]) : 118
         const bpm = Number.isFinite(parsedBpm) ? Math.round(clamp(parsedBpm, 40, 240)) : 118
         const drums: Note[] = []
         const bass: Note[] = []
@@ -525,17 +535,38 @@ export function registerSlashCommands(commandsCtx: Context, projects: ProjectSto
           text: `已生成并同步到合成器：${saved.name} (${saved.bpm} BPM, ${saved.bars} 小节, ${saved.tracks.length} 轨)`,
         }
       }
-      if (sub === 'help') {
+      if (trimmed === '' || trimmed.toLowerCase() === 'help') {
         return {
           kind: 'success',
           text: [
+            '`/synth <曲风/速度/乐器描述>` — 调用模型按描述创作多轨乐曲并直接写入合成器工程',
             '`/synth list` — 查看当前已保存的工程列表',
             '`/synth groove [bpm]` — 快速生成一段 4 小节三轨律动并同步到合成器',
-            '也可以直接在对话中描述风格/速度/调式（如「写一首 126 BPM 的 Synthwave 伴奏」），由助手自动调用合成器工具创作。',
           ].join('\n'),
         }
       }
-      return { kind: 'error', text: `未知子命令 \`${sub}\`，可用：list | groove [bpm] | help` }
+      if (typeof agent?.followup !== 'function') {
+        return { kind: 'error', text: '当前会话不支持唤醒模型，请直接在对话中描述曲风需求，或使用 `/synth groove 120`。' }
+      }
+      agent.followup({
+        id: randomUUID(),
+        role: 'user',
+        content: [{
+          type: 'text',
+          text: [
+            '请直接根据以下描述调用 `synthesizer_save_project` 工具创作并保存一首完整的 `dsh-synthesizer` 多轨乐曲（无需反问确认；若是修改已有曲目可先调用 `synthesizer_list_projects` / `synthesizer_get_project`）：',
+            '- 至少包含鼓组（drums）、贝斯（bass）、和弦/铺底（keys/pad）和主音（lead/pluck/arp）等饱满织体，合理设置 BPM、调式、立体声声像（pan）与力度起伏；',
+            '- 保存后前端合成器会自动同步加载。',
+            '',
+            `创作需求：${trimmed}`,
+          ].join('\n'),
+        }],
+        source: { kind: 'user' },
+      })
+      return {
+        kind: 'success',
+        text: `已交给模型创作「${trimmed}」，生成后将自动进入合成器工程。`,
+      }
     },
   }))
   return true

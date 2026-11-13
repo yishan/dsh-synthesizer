@@ -1,6 +1,6 @@
 {
   "name": "dsh-synthesizer",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Multi-track browser synthesizer for DeepSeek Harness. Loop a piano-roll sketch while the session stays open.",
   "type": "module",
   "license": "MIT",

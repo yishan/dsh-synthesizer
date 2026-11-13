@@ -113,6 +113,7 @@ export function SynthControls({ track, playing }: { track: Track; playing: boole
   const auditionPitch = track.instrumentId === 'bass' || track.instrumentId === 'acid' ? 45 : 60
 
   const presets = presetsFor(track.instrumentId)
+  const matchedPreset = presets.some((preset) => isPreset(patch, preset))
   const lfoTarget = patch.lfoTarget !== undefined && (patch.lfoDepth ?? 0) > 0 ? patch.lfoTarget : 'off'
 
   // Four macro values (0..100) derived from the patch.
@@ -181,7 +182,13 @@ export function SynthControls({ track, playing }: { track: Track; playing: boole
             {preset.badge !== undefined ? preset.label.split(' ')[0] : preset.label}
           </button>
         ))}
-        {presets.some((preset) => isPreset(patch, preset)) ? null : <span className="dsyn-caption">已调整</span>}
+        <span
+          className="dsyn-caption"
+          aria-hidden={matchedPreset}
+          style={{ visibility: matchedPreset ? 'hidden' : 'visible', whiteSpace: 'nowrap' }}
+        >
+          已调整
+        </span>
       </div>
 
       <div className="dsyn-macros">
@@ -307,6 +314,12 @@ export function SynthControls({ track, playing }: { track: Track; playing: boole
   )
 }
 
+function formatParamValue(value: number, step: number): string {
+  if (step === 0.01 || step === 0.02) return value.toFixed(2)
+  if (step === 0.1 || step === 0.5) return value.toFixed(1)
+  return String(value)
+}
+
 function Param({
   label,
   hint,
@@ -332,8 +345,8 @@ function Param({
     <label className={`dsyn-param${macro ? ' is-macro' : ''}`}>
       <div>
         <span>{label}</span>
-        {hint !== undefined ? <span className="dsyn-caption" style={{ marginRight: 'auto' }}>{hint}</span> : null}
-        <output>{value}{unit}</output>
+        {hint !== undefined ? <span className="dsyn-caption">{hint}</span> : null}
+        <output>{formatParamValue(value, step)}{unit}</output>
       </div>
       <input
         aria-label={label}
@@ -344,7 +357,7 @@ function Param({
         value={value}
         onChange={(event) => { onChange(Number(event.target.value)) }}
         className="dsyn-range"
-        style={{ width: '100%', ...rangeFill(value, min, max) }}
+        style={rangeFill(value, min, max)}
       />
     </label>
   )

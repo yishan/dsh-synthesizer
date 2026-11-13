@@ -78,6 +78,7 @@ describe('agent tools & prompt integration', () => {
           id: 'drums',
           name: '鼓组',
           instrumentId: 'drums',
+          kit: '808',
           notes: [
             { pitch: 36, startBeat: 0, durationBeats: 0.25, velocity: 118 },
             { pitch: 38, startBeat: 1, durationBeats: 0.25, velocity: 110 },
@@ -88,6 +89,13 @@ describe('agent tools & prompt integration', () => {
           name: '贝斯',
           instrumentId: 'bass',
           pan: -0.25,
+          synth: {
+            waveform: 'sawtooth',
+            cutoff: 920,
+            lfoTarget: 'filter',
+            lfoRate: 0.3,
+            lfoDepth: 0.4,
+          },
           notes: [
             { pitch: 41, startBeat: 0, durationBeats: 0.5, velocity: 105 },
           ],
@@ -128,9 +136,22 @@ describe('agent tools & prompt integration', () => {
     expect(listRes.sync.revision).toBe(2)
 
     const getRes = await tools.get('synthesizer_get_project')!.execute({ id: 'ai-synthwave' }, { signal }) as {
-      project: { tracks: Array<{ id: string; pan?: number }> }
+      project: {
+        tracks: Array<{
+          id: string
+          pan?: number
+          kit?: string
+          synth?: { waveform?: string; cutoff?: number; lfoTarget?: string }
+        }>
+      }
     }
     expect(getRes.project.tracks.find((t) => t.id === 'lead')?.pan).toBe(0.3)
+    expect(getRes.project.tracks.find((t) => t.id === 'drums')?.kit).toBe('808')
+    expect(getRes.project.tracks.find((t) => t.id === 'bass')?.synth).toMatchObject({
+      waveform: 'sawtooth',
+      cutoff: 920,
+      lfoTarget: 'filter',
+    })
 
     // Rejects empty tracks
     await expect(saveTool.execute({ name: 'Empty', tracks: [] }, { signal })).rejects.toThrow(/tracks/)

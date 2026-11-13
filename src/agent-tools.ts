@@ -24,11 +24,14 @@ import {
   PITCH_MAX,
   PITCH_MIN,
   STEP_BEATS,
+  coerceSynthPatch,
   sanitizeProject,
   type Note,
   type Project,
+  type SynthPatch,
   type Track,
 } from './model.ts'
+import { resolveSynthPatch } from './client/instruments.ts'
 import { projectSchema } from './schema.ts'
 import type { ProjectStore } from './store.ts'
 import type { SyncTracker } from './sync.ts'
@@ -125,6 +128,16 @@ function normalizeNotes(rawNotes: unknown, bars: number): Note[] {
   return out
 }
 
+function mergeSynthPatch(instrumentId: string, rawSynth: unknown, prevSynth?: SynthPatch): SynthPatch | undefined {
+  if (typeof rawSynth !== 'object' || rawSynth === null) return prevSynth
+  const base = prevSynth ?? resolveSynthPatch(instrumentId)
+  const merged: Record<string, unknown> = { ...base }
+  for (const [key, val] of Object.entries(rawSynth as Record<string, unknown>)) {
+    if (val !== undefined) merged[key] = val
+  }
+  return coerceSynthPatch(merged) ?? prevSynth
+}
+
 function normalizeTrack(raw: unknown, index: number, bars: number): Track {
   const rec = (typeof raw === 'object' && raw !== null ? raw : {}) as Record<string, unknown>
   const instrumentId = typeof rec.instrumentId === 'string' && /^[a-z0-9-]{1,32}$/.test(rec.instrumentId.trim())
@@ -138,6 +151,10 @@ function normalizeTrack(raw: unknown, index: number, bars: number): Track {
   const pan = typeof rec.pan === 'number' && Number.isFinite(rec.pan) && Math.abs(rec.pan) >= 0.01
     ? clamp(Math.round(rec.pan * 100) / 100, -1, 1)
     : undefined
+  const kit = typeof rec.kit === 'string' && ['classic', '808', 'lofi', 'chip'].includes(rec.kit.trim())
+    ? rec.kit.trim()
+    : undefined
+  const synth = rec.synth !== undefined ? mergeSynthPatch(instrumentId, rec.synth) : undefined
   return {
     id,
     name,
@@ -146,6 +163,8 @@ function normalizeTrack(raw: unknown, index: number, bars: number): Track {
     ...(rec.solo === true ? { solo: true } : {}),
     gain,
     ...(pan !== undefined ? { pan } : {}),
+    ...(kit !== undefined ? { kit } : {}),
+    ...(synth !== undefined ? { synth } : {}),
     notes: normalizeNotes(rec.notes, bars),
   }
 }
@@ -294,6 +313,12 @@ export function registerAgentTools(toolsCtx: Context, projects: ProjectStore, tr
               },
               gain: { type: 'number' },
               pan: { type: 'number', description: 'Stereo pan from -1 (left) to 1 (right).' },
+              kit: { type: 'string', enum: ['classic', '808', 'lofi', 'chip'], description: 'Drum kit sound (for drums tracks).' },
+              synth: {
+                type: 'object',
+                description: 'Optional subtractive synth patch (waveform, detune 0..50, subMix 0..1, cutoff 80..12000, resonance 0.1..20, envMod 0..1, attack/decay/sustain/release, delayMix 0..1, reverbMix 0..1, drive 0..1, lfoTarget pitch|filter|amp, lfoRate, lfoDepth).',
+                additionalProperties: true,
+              },
               mute: { type: 'boolean' },
               solo: { type: 'boolean' },
               notes: {
@@ -353,6 +378,12 @@ export function registerAgentTools(toolsCtx: Context, projects: ProjectStore, tr
         instrumentId: { type: 'string', description: 'Instrument id (drums, bass, keys, lead, pad, pluck, bell, arp).' },
         gain: { type: 'number', description: 'Track volume 0..1.' },
         pan: { type: 'number', description: 'Stereo pan -1..1.' },
+        kit: { type: 'string', enum: ['classic', '808', 'lofi', 'chip'], description: 'Optional drum kit (for drums track).' },
+        synth: {
+          type: 'object',
+          description: 'Optional subtractive synth patch overrides (waveform, detune, subMix, cutoff, resonance, envMod, ADSR, delayMix, reverbMix, drive, lfoTarget/Rate/Depth).',
+          additionalProperties: true,
+        },
         mute: { type: 'boolean' },
         solo: { type: 'boolean' },
         notes: {
@@ -392,12 +423,20 @@ export function registerAgentTools(toolsCtx: Context, projects: ProjectStore, tr
       let nextTracks: Track[]
       if (idx >= 0) {
         const prev = current.tracks[idx]!
+        const nextInstrumentId = typeof rec.instrumentId === 'string' && rec.instrumentId.trim() !== ''
+          ? rec.instrumentId.trim()
+          : prev.instrumentId
+        const nextSynth = rec.synth !== undefined
+          ? mergeSynthPatch(nextInstrumentId, rec.synth, prev.synth)
+          : prev.synth
         const merged = normalizeTrack({
           ...prev,
           ...(rec.name !== undefined ? { name: rec.name } : {}),
           ...(rec.instrumentId !== undefined ? { instrumentId: rec.instrumentId } : {}),
           ...(rec.gain !== undefined ? { gain: rec.gain } : {}),
           ...(rec.pan !== undefined ? { pan: rec.pan } : {}),
+          ...(rec.kit !== undefined ? { kit: rec.kit } : {}),
+          ...(nextSynth !== undefined ? { synth: nextSynth } : {}),
           ...(rec.mute !== undefined ? { mute: rec.mute } : {}),
           ...(rec.solo !== undefined ? { solo: rec.solo } : {}),
           ...(rec.notes !== undefined ? { notes: rec.notes } : {}),
@@ -414,6 +453,8 @@ export function registerAgentTools(toolsCtx: Context, projects: ProjectStore, tr
           instrumentId: rec.instrumentId ?? 'keys',
           gain: rec.gain ?? 0.78,
           pan: rec.pan,
+          kit: rec.kit,
+          synth: rec.synth,
           mute: rec.mute,
           solo: rec.solo,
           notes: rec.notes ?? [],
@@ -450,12 +491,14 @@ export function registerPromptSection(promptCtx: Context): boolean {
     order: 2550,
     interpolate: false,
     text: [
-      '## dsh-synthesizer Music Composition',
+      '## dsh-synthesizer Music Composition & Sound Design',
       'When the user asks to create, compose, remix, or edit music/beats in dsh-synthesizer, use `synthesizer_save_project` (or `synthesizer_list_projects` / `synthesizer_get_project` / `synthesizer_update_track`).',
-      `- Instruments: \`drums\`, \`bass\`, \`keys\`, \`lead\`, \`pad\`, \`pluck\`, \`bell\`, \`arp\`.`,
+      '- Instruments: `drums` (`kit`: `classic` | `808` | `lofi` | `chip`), `bass`, `keys`, `lead`, `pad`, `pluck`, `bell`, `arp`.',
       `- Drum MIDI pitches: ${DRUM_KICK}=Kick, ${DRUM_RIM}=Rim, ${DRUM_SNARE}=Snare, ${DRUM_CLAP}=Clap, ${DRUM_HAT}=ClosedHat, ${DRUM_TOM_LOW}=LowTom, ${DRUM_OPEN_HAT}=OpenHat, ${DRUM_CYMBAL}=Crash.`,
       `- Grid & range: 4 beats/bar, \`startBeat\` and \`durationBeats\` in 0.25-beat (16th-note) steps, \`pitch\` ${PITCH_MIN}..${PITCH_MAX}, \`velocity\` 1..127, \`pan\` -1..1.`,
-      '- Musicality: give drums/bass/chords/melody distinct rhythmic roles, vary note velocities for groove, spread melodic layers slightly in stereo `pan`, and keep notes inside the chosen `scaleRoot` + `scaleId`.',
+      '- Subtractive Synth Patch (`track.synth`): `waveform` (`sawtooth`/`square`/`triangle`/`sine`), `detune` (0..50 cents unison spread), `subMix` (0..1 octave-below sub osc), `cutoff` (80..12000 Hz lowpass) + `resonance` (Q 0.1..20) + `envMod` (0..1 filter envelope sweep), ADSR (`attack`/`decay`/`sustain`/`release`), `drive` (0..1 saturation), `delayMix` / `reverbMix` (0..1), and `lfoTarget` (`pitch`/`filter`/`amp`) + `lfoRate` + `lfoDepth`.',
+      '- Genre conventions: Synthwave (105-122 BPM, driving 8th octave sawtooth bass, lush detuned pads, `classic` kit); Acid 303 (125-135 BPM, four-on-the-floor `808` drums, high-resonance `acid` bass with filter LFO/velocity accents); Lo-Fi (75-92 BPM, `swing` 0.25-0.38, `lofi` kit, warm triangle bass, Rhodes chords with slow subtle pitch LFO wow/flutter); Chiptune (130-150 BPM, `chip` kit, square/triangle waves + rapid 16th triad arps); Ambient (65-85 BPM, sparse/soft percussion, long attack/release reverb pads with slow filter LFO); Trap/Future Bass (130-145 BPM half-time snare on beat 2, `808` kit, fast hat rolls, sub bass + supersaw LFO-pumped chords).',
+      '- Musicality: give drums/bass/chords/melody distinct rhythmic roles, vary note velocities for groove, spread melodic layers in stereo `pan`, and keep notes inside the chosen `scaleRoot` + `scaleId`.',
     ].join('\n'),
   }))
   return true

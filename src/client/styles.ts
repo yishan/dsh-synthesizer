@@ -106,11 +106,13 @@ const CSS = `
 .dsyn-field.is-quiet:hover, .dsyn-field.is-quiet:focus { background: var(--s-hover); }
 .dsyn-field.is-number { font-variant-numeric: tabular-nums; }
 /* Slider: a hairline and a small dot at rest; both grow on hover, focus, or drag.
-   The 16px box is the hit area throughout. --fill is set inline from the value. */
+   The 18px box is the hit area throughout so growing the track/thumb never shifts layout. */
 .dsyn-range {
-  -webkit-appearance: none; appearance: none; flex: 1; min-width: 0; margin: 0; height: 16px;
+  -webkit-appearance: none; appearance: none; min-width: 0; margin: 0; height: 18px;
   background: transparent; cursor: pointer; --fill: 50%;
 }
+.dsyn-track-row .dsyn-range { flex: 1; }
+.dsyn-param .dsyn-range { flex: none; width: 100%; }
 .dsyn-range::-webkit-slider-runnable-track {
   height: 2px; border-radius: 2px;
   background: linear-gradient(to right, var(--s-fg2) var(--fill), var(--s-line-strong) var(--fill));
@@ -285,14 +287,16 @@ const CSS = `
 .dsyn-panel { padding: 4px 12px 12px; overflow-y: auto; display: flex; flex-direction: column; gap: 12px; }
 .dsyn-line { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .dsyn-spread { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
-.dsyn-macros { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px 20px; }
+.dsyn-macros { display: grid; grid-template-columns: repeat(auto-fit, minmax(168px, 1fr)); gap: 10px 20px; }
 .dsyn-advanced { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px 24px; padding-top: 12px; border-top: 1px solid var(--s-line); }
-.dsyn-module { display: flex; flex-direction: column; gap: 8px; }
-.dsyn-module-title { display: flex; justify-content: space-between; align-items: center; font-size: 11px; font-weight: 600; color: var(--s-fg2); min-height: 22px; }
-.dsyn-param { display: flex; flex-direction: column; gap: 2px; font-size: 12px; cursor: pointer; }
-.dsyn-param > div { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
-.dsyn-param output { font: 500 11px/1 var(--s-mono); font-variant-numeric: tabular-nums; color: var(--s-fg2); }
-.dsyn-param.is-macro span:first-child { font-weight: 500; }
+.dsyn-module { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.dsyn-module-title { display: flex; justify-content: space-between; align-items: center; font-size: 11px; font-weight: 600; color: var(--s-fg2); min-height: 24px; }
+.dsyn-param { display: flex; flex-direction: column; gap: 4px; font-size: 12px; cursor: pointer; min-width: 0; }
+.dsyn-param > div { display: flex; align-items: center; justify-content: space-between; gap: 6px; min-width: 0; min-height: 18px; }
+.dsyn-param > div > span:first-child { white-space: nowrap; flex-shrink: 0; }
+.dsyn-param > div > .dsyn-caption { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dsyn-param output { font: 500 11px/1 var(--s-mono); font-variant-numeric: tabular-nums; color: var(--s-fg2); white-space: nowrap; flex-shrink: 0; text-align: right; }
+.dsyn-param.is-macro > div > span:first-child { font-weight: 500; }
 .dsyn-scope { flex: 0 0 auto; border-radius: 6px; border: 1px solid var(--s-line); pointer-events: none; color: var(--s-fg); }
 .dsyn-keys { display: flex; gap: 2px; height: 52px; overflow-x: auto; }
 .dsyn-pkey {

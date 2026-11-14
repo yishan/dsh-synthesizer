@@ -159,10 +159,10 @@ describe('agent tools & prompt integration', () => {
 
   it('registers /synth slash command and supports prompt followup, list, groove, and help', async () => {
     const { store, tracker } = makeStore()
-    const followups: Array<{ role: string; content: Array<{ type: string; text: string }> }> = []
+    const followups: Array<{ role: string; content: Array<{ type: string; text: string }>; source?: { kind: string } }> = []
     let registeredHandler: ((invocation: {
       rawInput: string
-      agent?: { followup?: (msg: { role: string; content: Array<{ type: string; text: string }> }) => void }
+      agent?: { followup?: (msg: { role: string; content: Array<{ type: string; text: string }>; source?: { kind: string } }) => void }
     }) => Promise<{ kind: string; text?: string }>) | undefined
 
     const fakeCtx = {
@@ -201,6 +201,7 @@ describe('agent tools & prompt integration', () => {
     })
     expect(promptRes.kind).toBe('success')
     expect(followups).toHaveLength(1)
+    expect(followups[0]?.source?.kind).toBe('request')
     expect(followups[0]?.content[0]?.text).toContain('synthesizer_save_project')
     expect(followups[0]?.content[0]?.text).toContain('124 BPM')
 

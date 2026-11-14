@@ -71,7 +71,7 @@ interface CommandAgentFace {
     id: string
     role: 'user'
     content: Array<{ type: 'text'; text: string }>
-    source: { kind: 'user' }
+    source: { kind: string; [key: string]: unknown }
   }) => void
 }
 
@@ -499,6 +499,7 @@ export function registerPromptSection(promptCtx: Context): boolean {
       '- Subtractive Synth Patch (`track.synth`): `waveform` (`sawtooth`/`square`/`triangle`/`sine`), `detune` (0..50 cents unison spread), `subMix` (0..1 octave-below sub osc), `cutoff` (80..12000 Hz lowpass) + `resonance` (Q 0.1..20) + `envMod` (0..1 filter envelope sweep), ADSR (`attack`/`decay`/`sustain`/`release`), `drive` (0..1 saturation), `delayMix` / `reverbMix` (0..1), and `lfoTarget` (`pitch`/`filter`/`amp`) + `lfoRate` + `lfoDepth`.',
       '- Genre conventions: Synthwave (105-122 BPM, driving 8th octave sawtooth bass, lush detuned pads, `classic` kit); Acid 303 (125-135 BPM, four-on-the-floor `808` drums, high-resonance `acid` bass with filter LFO/velocity accents); Lo-Fi (75-92 BPM, `swing` 0.25-0.38, `lofi` kit, warm triangle bass, Rhodes chords with slow subtle pitch LFO wow/flutter); Chiptune (130-150 BPM, `chip` kit, square/triangle waves + rapid 16th triad arps); Ambient (65-85 BPM, sparse/soft percussion, long attack/release reverb pads with slow filter LFO); Trap/Future Bass (130-145 BPM half-time snare on beat 2, `808` kit, fast hat rolls, sub bass + supersaw LFO-pumped chords).',
       '- Musicality: give drums/bass/chords/melody distinct rhythmic roles, vary note velocities for groove, spread melodic layers in stereo `pan`, and keep notes inside the chosen `scaleRoot` + `scaleId`.',
+      '- Direct execution: when asked to compose or triggered via `/synth`, call `synthesizer_save_project` directly without asking confirmation first, creating a full multi-track arrangement (drums, bass, keys/pad, lead/pluck) unless the user asks to edit an existing project via `synthesizer_list_projects` / `synthesizer_get_project`. After saving, the frontend synthesizer loads the project automatically.',
     ].join('\n'),
   }))
   return true
@@ -596,15 +597,9 @@ export function registerSlashCommands(commandsCtx: Context, projects: ProjectSto
         role: 'user',
         content: [{
           type: 'text',
-          text: [
-            '请直接根据以下描述调用 `synthesizer_save_project` 工具创作并保存一首完整的 `dsh-synthesizer` 多轨乐曲（无需反问确认；若是修改已有曲目可先调用 `synthesizer_list_projects` / `synthesizer_get_project`）：',
-            '- 至少包含鼓组（drums）、贝斯（bass）、和弦/铺底（keys/pad）和主音（lead/pluck/arp）等饱满织体，合理设置 BPM、调式、立体声声像（pan）与力度起伏；',
-            '- 保存后前端合成器会自动同步加载。',
-            '',
-            `创作需求：${trimmed}`,
-          ].join('\n'),
+          text: `创作需求：${trimmed}\n（请直接调用 \`synthesizer_save_project\` 生成并保存完整多轨合成器工程）`,
         }],
-        source: { kind: 'user' },
+        source: { kind: 'request', plugin: 'dsh-synthesizer' },
       })
       return {
         kind: 'success',

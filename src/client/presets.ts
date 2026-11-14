@@ -379,6 +379,23 @@ export function generateDrumPattern(patternId: DrumPatternId, bars = 4): Note[] 
   return sortNotes(notes)
 }
 
+export type ChordProgressionId = 'neon' | 'pop' | 'royal' | 'jazz' | 'dark'
+
+export interface ChordProgressionPreset {
+  id: ChordProgressionId
+  label: string
+  numerals: string
+  degrees: readonly number[]
+}
+
+export const CHORD_PROGRESSIONS: readonly ChordProgressionPreset[] = [
+  { id: 'neon', label: '霓虹 80s (i–VI–III–VII)', numerals: 'i–VI–III–VII', degrees: [0, 5, 2, 6] },
+  { id: 'pop', label: '流行卡农 (I–V–vi–IV)', numerals: 'I–V–vi–IV', degrees: [0, 4, 5, 3] },
+  { id: 'royal', label: '王道进行 (IV–V–iii–vi)', numerals: 'IV–V–iii–vi', degrees: [3, 4, 2, 5] },
+  { id: 'jazz', label: '爵士 251 (ii–V–I–vi)', numerals: 'ii–V–I–vi', degrees: [1, 4, 0, 5] },
+  { id: 'dark', label: '暗黑电子 (i–II–i–VII)', numerals: 'i–II–i–VII', degrees: [0, 1, 0, 6] },
+]
+
 export type MelodicPatternId = 'chords' | 'octaveBass' | 'acidLine' | 'arpUp' | 'randomRiff'
 
 export const MELODIC_PATTERN_LIST: ReadonlyArray<{ id: MelodicPatternId; label: string }> = [
@@ -478,7 +495,7 @@ export function generateMelodicPattern(
       { step: 15, deg: 5, dur: 0.25, vel: 96 },
     ]
     for (let bar = 0; bar < bars; bar += 1) {
-      const barOffsetDeg = bar % 2 === 1 ? 2 : 0
+      const barOffsetDeg = progDegrees[bar % progDegrees.length] ?? (bar % 2 === 1 ? 2 : 0)
       const b = bar * 4
       for (const item of stepsPattern) {
         const pitch = degreePitch(36, item.deg + barOffsetDeg)
@@ -523,6 +540,42 @@ export function transposeNotes(notes: readonly Note[], semitones: number): Note[
     ...note,
     pitch: Math.max(PITCH_MIN, Math.min(PITCH_MAX, note.pitch + semitones)),
   }))
+}
+
+/** Snap all notes in `notes` to the nearest pitch in the active scale, deduplicating collisions. */
+export function snapNotesToScale(
+  notes: readonly Note[],
+  rootSemitone: number,
+  scaleId: string,
+): Note[] {
+  if (scaleId === 'chromatic' || notes.length === 0) return [...notes]
+  const pool = scalePitches(rootSemitone, scaleId, PITCH_MIN, PITCH_MAX)
+  const byCell = new Map<string, Note>()
+  for (const note of notes) {
+    let targetPitch = note.pitch
+    if (!isPitchInScale(note.pitch, rootSemitone, scaleId)) {
+      let best = pool[0] ?? note.pitch
+      let bestDist = Infinity
+      for (const candidate of pool) {
+        const dist = Math.abs(candidate - note.pitch)
+        if (dist < bestDist) {
+          bestDist = dist
+          best = candidate
+        }
+      }
+      targetPitch = best
+    }
+    const key = `${targetPitch}:${note.startBeat}`
+    const existing = byCell.get(key)
+    if (
+      existing === undefined
+      || note.durationBeats > existing.durationBeats
+      || (note.durationBeats === existing.durationBeats && note.velocity > existing.velocity)
+    ) {
+      byCell.set(key, { ...note, pitch: targetPitch })
+    }
+  }
+  return sortNotes([...byCell.values()])
 }
 
 /** Add subtle velocity dynamics so a quantized grid feels more human-played. */

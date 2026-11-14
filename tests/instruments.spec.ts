@@ -285,4 +285,43 @@ describe('instruments', () => {
     )
     expect(chokeRamp?.time).toBeCloseTo(0.062, 5)
   })
+
+  it('updates filter cutoff, resonance, waveform, detune, and LFO on an active voice via updatePatch', () => {
+    const fake = fakeContext()
+    const initial = {
+      ...DEFAULT_SYNTH_PATCHES.lead!,
+      cutoff: 1200,
+      resonance: 2,
+      detune: 14,
+      lfoTarget: 'filter' as const,
+      lfoRate: 4,
+      lfoDepth: 0.4,
+    }
+    const voice = getInstrument('lead').noteOn(fake.ctx, {} as AudioNode, 0, 72, 100, initial)
+    voice.updatePatch?.({
+      ...initial,
+      waveform: 'square',
+      cutoff: 2400,
+      resonance: 7.5,
+      detune: 25,
+      lfoRate: 8,
+      lfoDepth: 0.75,
+    }, 0.1)
+
+    const filter = fake.created.find((node) => node.kind === 'filter')
+    const oscs = fake.created.filter((node) => node.kind === 'osc')
+    const primaryOscs = oscs.slice(0, 2)
+    const lfoOsc = oscs.at(-1)
+
+    expect(filter?.frequency.values).toContainEqual({ method: 'cancel', value: 0, time: 0.1 })
+    // pitch 72 is +1 octave from 60 -> 50% key tracking scales 2400 * 2^0.5
+    expect(filter?.frequency.values.find((e) => e.method === 'set' && e.time === 0.1)?.value).toBeCloseTo(2400 * Math.SQRT2, 1)
+    expect(filter?.Q.values.find((e) => e.time === 0.1)?.value).toBe(7.5)
+    expect(primaryOscs.every((osc) => osc.type === 'square')).toBe(true)
+    expect(primaryOscs[0]?.frequency.values.find((e) => e.time === 0.1)?.value).not.toBeCloseTo(
+      primaryOscs[0]?.frequency.values[0]?.value ?? 0,
+      1,
+    )
+    expect(lfoOsc?.frequency.values.find((e) => e.time === 0.1)?.value).toBe(8)
+  })
 })

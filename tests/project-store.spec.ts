@@ -2,7 +2,18 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Project } from '../src/schema.ts'
 import { saveProject } from '../src/client/api.ts'
 import { DEFAULT_SYNTH_PATCHES } from '../src/client/instruments.ts'
-import { addDrumFill, buildScaleChord, generateMelodicPattern, humanizeNotes, ROOT_NOTES, SCALES, SONG_PRESETS } from '../src/client/presets.ts'
+import {
+  addDrumFill,
+  buildScaleChord,
+  CHORD_PROGRESSIONS,
+  generateMelodicPattern,
+  humanizeNotes,
+  isPitchInScale,
+  ROOT_NOTES,
+  SCALES,
+  snapNotesToScale,
+  SONG_PRESETS,
+} from '../src/client/presets.ts'
 import { ProjectClient } from '../src/client/project-store.ts'
 
 /** Minimal in-memory localStorage. */
@@ -517,5 +528,34 @@ describe('project client', () => {
     for (let i = 1; i < barUpperMeans.length; i += 1) {
       expect(Math.abs(barUpperMeans[i]! - barUpperMeans[i - 1]!)).toBeLessThan(5)
     }
+  })
+
+  it('snaps out-of-scale notes to the active scale and generates progressions across CHORD_PROGRESSIONS', () => {
+    // C major: [0, 2, 4, 5, 7, 9, 11]. 61 (C#4) and 66 (F#4) are out of scale.
+    // Colliding 60 (C4, dur 0.25) and 61 (C#4 -> 60, dur 1.0) should keep the longer note.
+    const snapped = snapNotesToScale([
+      { pitch: 60, startBeat: 0, durationBeats: 0.25, velocity: 80 },
+      { pitch: 61, startBeat: 0, durationBeats: 1, velocity: 100 },
+      { pitch: 66, startBeat: 1, durationBeats: 0.5, velocity: 90 },
+    ], 0, 'major')
+
+    expect(snapped).toHaveLength(2)
+    expect(snapped.every((note) => isPitchInScale(note.pitch, 0, 'major'))).toBe(true)
+    expect(snapped[0]).toEqual({ pitch: 60, startBeat: 0, durationBeats: 1, velocity: 100 })
+    expect(snapped[1]?.pitch).toBe(65)
+
+    // Verify all 5 chord progression presets produce harmonic patterns following the progression roots
+    expect(CHORD_PROGRESSIONS.map((p) => p.id)).toEqual(['neon', 'pop', 'royal', 'jazz', 'dark'])
+    const popProg = CHORD_PROGRESSIONS.find((p) => p.id === 'pop')!
+    const jazzProg = CHORD_PROGRESSIONS.find((p) => p.id === 'jazz')!
+    const popBass = generateMelodicPattern('octaveBass', 4, 0, 'major', popProg.degrees)
+    const jazzBass = generateMelodicPattern('octaveBass', 4, 0, 'major', jazzProg.degrees)
+    const bar1RootPop = popBass.find((n) => n.startBeat === 4)?.pitch
+    const bar1RootJazz = jazzBass.find((n) => n.startBeat === 4)?.pitch
+    // Bar 2 (startBeat 4): Pop I-V-vi-IV has V (G=43), Jazz ii-V-I-vi also has V (43), Bar 1 (startBeat 0) differs: I (36) vs ii (38)
+    expect(popBass.find((n) => n.startBeat === 0)?.pitch).toBe(36)
+    expect(jazzBass.find((n) => n.startBeat === 0)?.pitch).toBe(38)
+    expect(bar1RootPop).toBe(43)
+    expect(bar1RootJazz).toBe(43)
   })
 })

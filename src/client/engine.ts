@@ -2,8 +2,8 @@
  * Module-level playback. The editor page can unmount without stopping the loop;
  * the sidebar transport keeps the same AudioContext.
  */
-import { STEP_BEATS, type SynthPatch } from '../model.ts'
-import { type ScheduledNote } from './instruments.ts'
+import { isTrackAudible, STEP_BEATS, type SynthPatch } from '../model.ts'
+import { resolveSynthPatch, type ScheduledNote } from './instruments.ts'
 import { createMixGraph, type MixGraph } from './mix.ts'
 import { getProjectStore, type ProjectClient } from './project-store.ts'
 import {
@@ -18,6 +18,7 @@ const LOOKAHEAD_SECONDS = 0.1
 const POLL_MS = 25
 
 interface LiveVoice {
+  trackId: string
   note: ScheduledNote
   stopTime: number
 }
@@ -46,7 +47,9 @@ export class Engine {
         } else {
           this.pausedBeat = 0
         }
+        return
       }
+      this.syncLiveVoices()
     })
   }
 
@@ -254,13 +257,41 @@ export class Engine {
     for (const event of step.events) {
       try {
         const notes = playEvents([event], audio, (item) => this.outputFor(item))
-        for (const note of notes) this.voices.push({ note, stopTime: event.stopTime })
+        for (const note of notes) this.voices.push({ trackId: event.trackId, note, stopTime: event.stopTime })
       } catch {
         this.report(event.instrumentId)
       }
     }
     const now = audio.currentTime
     this.voices = this.voices.filter((voice) => now < voice.stopTime + 0.5)
+  }
+
+  private syncLiveVoices(): void {
+    const audio = this.audio
+    if (audio === undefined) return
+    const now = audio.currentTime
+    const state = this.store.getState()
+    const { project } = state
+    for (const track of project.tracks) {
+      if (this.mix !== undefined) {
+        this.mix.input(track.id, isTrackAudible(track, project.tracks) ? track.gain : 0, track.synth, track.pan)
+        if (track.id === state.selectedTrackId) {
+          this.mix.input('preview', track.gain, track.synth, track.pan)
+        }
+      }
+      if (track.instrumentId === 'drums') continue
+      const patch = resolveSynthPatch(track.instrumentId, track.synth)
+      for (const voice of this.voices) {
+        if (voice.trackId === track.id && now < voice.stopTime) {
+          voice.note.updatePatch?.(patch, now)
+        }
+      }
+      for (const entry of this.previews.values()) {
+        if (entry.trackId === track.id) {
+          entry.voice.updatePatch?.(patch, now)
+        }
+      }
+    }
   }
 
   private ensure(): AudioContext | undefined {

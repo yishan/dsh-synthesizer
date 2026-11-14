@@ -15,6 +15,7 @@ import { DRUM_LABELS } from './instruments.ts'
 import {
   addDrumFill,
   buildScaleChord,
+  CHORD_PROGRESSIONS,
   DRUM_PATTERN_LIST,
   generateDrumPattern,
   generateMelodicPattern,
@@ -23,8 +24,10 @@ import {
   MELODIC_PATTERN_LIST,
   ROOT_NOTES,
   SCALES,
+  snapNotesToScale,
   transposeNotes,
   type ChordBrushMode,
+  type ChordProgressionId,
 } from './presets.ts'
 import { getProjectStore } from './project-store.ts'
 import { trackColor } from './styles.ts'
@@ -91,8 +94,10 @@ export function PianoRoll({ track, bars, playing }: { track: Track; bars: number
   const [drawerOpen, setDrawerOpen] = useState(true)
   const [velocityDrag, setVelocityDrag] = useState(false)
   const [brushMode, setBrushMode] = useState<ChordBrushMode>('single')
+  const [progressionId, setProgressionId] = useState<ChordProgressionId>('neon')
 
   const drums = track.instrumentId === 'drums'
+  const activeProgression = CHORD_PROGRESSIONS.find((p) => p.id === progressionId)?.degrees ?? CHORD_PROGRESSIONS[0]!.degrees
   const hasFirstBarNotes = track.notes.some((n) => n.startBeat < BEATS_PER_BAR)
   const rowHeight = drums ? DRUM_ROW : MELODIC_ROW
   const steps = bars * 16
@@ -459,6 +464,15 @@ export function PianoRoll({ track, bars, playing }: { track: Track; bars: number
                     >
                       {SCALES.map((scale) => <option key={scale.id} value={scale.id}>{scale.name.split(' ')[0]}</option>)}
                     </select>
+                    <span className="dsyn-label">进行</span>
+                    <select
+                      aria-label="和弦进行"
+                      value={progressionId}
+                      onChange={(event) => { setProgressionId(event.target.value as ChordProgressionId) }}
+                      className="dsyn-field"
+                    >
+                      {CHORD_PROGRESSIONS.map((prog) => <option key={prog.id} value={prog.id}>{prog.label}</option>)}
+                    </select>
                     <span className="dsyn-caption">调外的音在网格里显示为深色行</span>
                   </div>
                 )}
@@ -485,7 +499,7 @@ export function PianoRoll({ track, bars, playing }: { track: Track; bars: number
                             onClick={() => {
                               store.setTrackNotes(
                                 track.id,
-                                generateMelodicPattern(pattern.id, bars, state.scaleRoot, state.scaleId),
+                                generateMelodicPattern(pattern.id, bars, state.scaleRoot, state.scaleId, activeProgression),
                               )
                             }}
                             className="dsyn-btn"
@@ -510,6 +524,15 @@ export function PianoRoll({ track, bars, playing }: { track: Track; bars: number
                           className="dsyn-btn"
                         >
                           升八度
+                        </button>
+                        <button
+                          type="button"
+                          title="将当前音轨所有音符就近修正到当前调式音阶内（可撤销）"
+                          disabled={track.notes.length === 0 || state.scaleId === 'chromatic'}
+                          onClick={() => { store.setTrackNotes(track.id, snapNotesToScale(track.notes, state.scaleRoot, state.scaleId)) }}
+                          className="dsyn-btn"
+                        >
+                          吸附到调式
                         </button>
                         <button
                           type="button"

@@ -17,6 +17,7 @@ import {
 
 export interface ScheduledNote {
   stop(time: number): void
+  updatePatch?(patch: SynthPatch, now: number): void
 }
 
 export interface Instrument {
@@ -302,8 +303,9 @@ function tone(
   gain.gain.linearRampToValueAtTime(sustainLevel, decayEnd)
 
   let target: AudioNode = gain
+  let shaper: WaveShaperNode | undefined
   if (options.drive !== undefined && options.drive > 0.05 && typeof ctx.createWaveShaper === 'function') {
-    const shaper = ctx.createWaveShaper()
+    shaper = ctx.createWaveShaper()
     shaper.curve = getDriveCurve(options.drive)
     shaper.connect(gain)
     target = shaper
@@ -339,7 +341,7 @@ function tone(
   }
 
   const baseFreq = midiHz(pitch)
-  const oscillators = (options.detuneCents ?? [0]).map((cents) => {
+  const unisonOscs = (options.detuneCents ?? [0]).map((cents) => {
     const oscillator = ctx.createOscillator()
     oscillator.type = options.type
     oscillator.frequency.setValueAtTime(baseFreq * 2 ** (cents / 1200), time)
@@ -347,12 +349,14 @@ function tone(
     oscillator.start(time)
     return oscillator
   })
+  const oscillators = [...unisonOscs]
 
+  let subGain: GainNode | undefined
   if (options.subMix !== undefined && options.subMix > 0.02 && pitch >= 24) {
     const subOsc = ctx.createOscillator()
     subOsc.type = 'sine'
     subOsc.frequency.setValueAtTime(midiHz(pitch - 12), time)
-    const subGain = ctx.createGain()
+    subGain = ctx.createGain()
     subGain.gain.setValueAtTime(options.subMix * 0.55, time)
     subOsc.connect(subGain)
     subGain.connect(target)
@@ -362,12 +366,15 @@ function tone(
 
   // LFO: one sine per voice, restarted with the note, routed to pitch, filter, or level.
   let voiceOut: AudioNode = gain
+  let lfoOsc: OscillatorNode | undefined
+  let lfoGain: GainNode | undefined
+  let tremolo: GainNode | undefined
   const lfo = options.lfo
   if (lfo !== undefined && lfo.depth > 0) {
-    const lfoOsc = ctx.createOscillator()
+    lfoOsc = ctx.createOscillator()
     lfoOsc.type = 'sine'
     lfoOsc.frequency.setValueAtTime(lfo.rate, time)
-    const lfoGain = ctx.createGain()
+    lfoGain = ctx.createGain()
     lfoOsc.connect(lfoGain)
     if (lfo.target === 'pitch') {
       // Up to a semitone either way.
@@ -380,7 +387,7 @@ function tone(
       lfoGain.gain.setValueAtTime(lfo.depth * filterBaseHz * 0.9, time)
       lfoGain.connect(filter.frequency)
     } else if (lfo.target === 'amp') {
-      const tremolo = ctx.createGain()
+      tremolo = ctx.createGain()
       tremolo.gain.setValueAtTime(1 - lfo.depth / 2, time)
       lfoGain.gain.setValueAtTime(lfo.depth / 2, time)
       lfoGain.connect(tremolo.gain)
@@ -428,6 +435,46 @@ function tone(
           oscillator.stop(at + options.release + 0.02)
         } catch {
           /* Already stopped. */
+        }
+      }
+    },
+    updatePatch(patch: SynthPatch, now: number) {
+      const at = Math.max(now, time)
+      const keyTrack = 2 ** (((pitch - 60) / 12) * 0.5)
+      const nextBaseHz = Math.max(40, Math.min(16000, patch.cutoff * keyTrack))
+      filterBaseHz = nextBaseHz
+      if (filter !== undefined) {
+        filter.frequency.cancelScheduledValues(at)
+        filter.frequency.setValueAtTime(nextBaseHz, at)
+        if (filter.Q !== undefined) filter.Q.setValueAtTime(patch.resonance, at)
+      }
+      const centsList = unisonOscs.length >= 3
+        ? [-patch.detune, 0, patch.detune]
+        : unisonOscs.length === 2
+          ? [-patch.detune, patch.detune]
+          : [0]
+      for (let i = 0; i < unisonOscs.length; i += 1) {
+        const osc = unisonOscs[i]!
+        const cents = centsList[i] ?? 0
+        osc.type = patch.waveform
+        osc.frequency.setValueAtTime(baseFreq * 2 ** (cents / 1200), at)
+      }
+      if (subGain !== undefined) {
+        subGain.gain.setValueAtTime(patch.subMix * 0.55, at)
+      }
+      if (shaper !== undefined) {
+        shaper.curve = getDriveCurve(patch.drive)
+      }
+      if (lfoOsc !== undefined && lfoGain !== undefined && lfo !== undefined) {
+        lfoOsc.frequency.setValueAtTime(patch.lfoRate ?? 5, at)
+        const depth = patch.lfoTarget === lfo.target ? (patch.lfoDepth ?? 0) : 0
+        if (lfo.target === 'pitch') {
+          lfoGain.gain.setValueAtTime(depth * 100, at)
+        } else if (lfo.target === 'filter') {
+          lfoGain.gain.setValueAtTime(depth * filterBaseHz * 0.9, at)
+        } else if (lfo.target === 'amp' && tremolo !== undefined) {
+          tremolo.gain.setValueAtTime(1 - depth / 2, at)
+          lfoGain.gain.setValueAtTime(depth / 2, at)
         }
       }
     },

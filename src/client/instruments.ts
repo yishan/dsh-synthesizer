@@ -32,6 +32,7 @@ export interface Instrument {
     patch?: SynthPatch,
     /** Instrument-specific variant. For drums, the kit id. */
     variant?: string,
+    glideFromPitch?: number,
   ): ScheduledNote
 }
 
@@ -276,6 +277,7 @@ interface ToneOptions {
   envMod?: number
   drive?: number
   lfo?: { target: LfoTarget; rate: number; depth: number }
+  glideFromPitch?: number
 }
 
 /**
@@ -341,10 +343,16 @@ function tone(
   }
 
   const baseFreq = midiHz(pitch)
+  const hasGlide = options.glideFromPitch !== undefined && options.glideFromPitch !== pitch
+  const glideStartFreq = hasGlide ? midiHz(options.glideFromPitch!) : baseFreq
+  const glideEndTime = time + 0.045
   const unisonOscs = (options.detuneCents ?? [0]).map((cents) => {
     const oscillator = ctx.createOscillator()
     oscillator.type = options.type
-    oscillator.frequency.setValueAtTime(baseFreq * 2 ** (cents / 1200), time)
+    oscillator.frequency.setValueAtTime(glideStartFreq * 2 ** (cents / 1200), time)
+    if (hasGlide) {
+      oscillator.frequency.exponentialRampToValueAtTime?.(baseFreq * 2 ** (cents / 1200), glideEndTime)
+    }
     oscillator.connect(target)
     oscillator.start(time)
     return oscillator
@@ -355,7 +363,11 @@ function tone(
   if (options.subMix !== undefined && options.subMix > 0.02 && pitch >= 24) {
     const subOsc = ctx.createOscillator()
     subOsc.type = 'sine'
-    subOsc.frequency.setValueAtTime(midiHz(pitch - 12), time)
+    const subStartPitch = hasGlide ? Math.max(12, options.glideFromPitch! - 12) : pitch - 12
+    subOsc.frequency.setValueAtTime(midiHz(subStartPitch), time)
+    if (hasGlide) {
+      subOsc.frequency.exponentialRampToValueAtTime?.(midiHz(pitch - 12), glideEndTime)
+    }
     subGain = ctx.createGain()
     subGain.gain.setValueAtTime(options.subMix * 0.55, time)
     subOsc.connect(subGain)
@@ -743,14 +755,16 @@ function playBuiltin(
   velocity: number,
   patch?: SynthPatch,
   variant?: string,
+  glideFromPitch?: number,
 ): ScheduledNote {
   if (id === 'drums') {
     const piece = drumPiece(pitch)
     if (piece === null) return silence()
     return playDrum(ctx, out, time, piece, velocity, getDrumKit(variant))
   }
+  const glideOpt = glideFromPitch !== undefined ? { glideFromPitch } : {}
   if (patch !== undefined) {
-    return tone(ctx, out, time, pitch, velocity, patchToToneOptions(patch))
+    return tone(ctx, out, time, pitch, velocity, { ...patchToToneOptions(patch), ...glideOpt })
   }
   switch (id) {
     case 'lead':
@@ -760,6 +774,7 @@ function playBuiltin(
         decay: 0.12,
         sustain: 0.55,
         release: 0.08,
+        ...glideOpt,
       })
     case 'bass':
       return tone(ctx, out, time, pitch, velocity, {
@@ -769,6 +784,7 @@ function playBuiltin(
         sustain: 0.45,
         release: 0.06,
         filterHz: 420,
+        ...glideOpt,
       })
     case 'pad':
       return tone(ctx, out, time, pitch, velocity, {
@@ -778,6 +794,7 @@ function playBuiltin(
         decay: 0.2,
         sustain: 0.75,
         release: 0.2,
+        ...glideOpt,
       })
     case 'keys':
       return tone(ctx, out, time, pitch, velocity, {
@@ -786,12 +803,13 @@ function playBuiltin(
         decay: 0.35,
         sustain: 0.15,
         release: 0.12,
+        ...glideOpt,
       })
     case 'acid':
     case 'pluck':
     case 'chip':
     case 'bell':
-      return tone(ctx, out, time, pitch, velocity, patchToToneOptions(resolveSynthPatch(id)))
+      return tone(ctx, out, time, pitch, velocity, { ...patchToToneOptions(resolveSynthPatch(id)), ...glideOpt })
     default: {
       const unexpected: never = id
       throw new Error(`unexpected instrument ${String(unexpected)}`)
@@ -803,8 +821,8 @@ function builtin(id: BuiltinId): Instrument {
   return {
     id,
     kind: 'synth',
-    noteOn(ctx, out, time, pitch, velocity, patch, variant) {
-      return playBuiltin(id, ctx, out, time, pitch, velocity, patch, variant)
+    noteOn(ctx, out, time, pitch, velocity, patch, variant, glideFromPitch) {
+      return playBuiltin(id, ctx, out, time, pitch, velocity, patch, variant, glideFromPitch)
     },
   }
 }

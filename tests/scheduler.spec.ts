@@ -109,4 +109,70 @@ describe('scheduler', () => {
       ['center', undefined],
     ])
   })
+
+  it('emits legato glideFromPitch for touching acid/bass/lead notes and triggers sidechain on kick', () => {
+    const project = withTracks('glide', [
+      track('acid', 'acid', [
+        { pitch: 48, startBeat: 0, durationBeats: 0.5, velocity: 100 },
+        { pitch: 55, startBeat: 0.5, durationBeats: 0.5, velocity: 105 },
+        { pitch: 57, startBeat: 1.5, durationBeats: 0.25, velocity: 100 },
+      ]),
+      track('pad', 'pad', [
+        { pitch: 60, startBeat: 0, durationBeats: 0.5, velocity: 90 },
+        { pitch: 64, startBeat: 0.5, durationBeats: 0.5, velocity: 90 },
+      ]),
+      track('drums', 'drums', [
+        { pitch: 36, startBeat: 0, durationBeats: 0.25, velocity: 120 },
+      ]),
+    ], 1)
+    // Lookahead split across beat 0.4 so note 2 (startBeat 0.5) checks note 1 from prior window
+    const s1 = advanceScheduler(initialSchedulerState(0, project), 0, 0.15, project, true)
+    const s2 = advanceScheduler(s1.state, 0.15, 0.85, project, true)
+    const allEvents = [...s1.events, ...s2.events]
+    const acidGlides = allEvents
+      .filter((e) => e.trackId === 'acid')
+      .map((e) => [e.pitch, e.glideFromPitch])
+    const padGlides = allEvents
+      .filter((e) => e.trackId === 'pad')
+      .map((e) => [e.pitch, e.glideFromPitch])
+
+    expect(acidGlides).toEqual([
+      [48, undefined],
+      [55, 48],
+      [57, undefined],
+    ])
+    expect(padGlides).toEqual([
+      [60, undefined],
+      [64, undefined],
+    ])
+
+    const seenGlides: Array<number | undefined> = []
+    const sidechains: Array<{ time: number; velocity?: number }> = []
+    const fakeInstrument: Instrument = {
+      id: 'fake-sample',
+      kind: 'sample',
+      noteOn(_ctx, _out, _time, _pitch, _vel, _patch, _kit, glideFromPitch) {
+        seenGlides.push(glideFromPitch)
+        return { stop() {} }
+      },
+    }
+    registerInstrument(fakeInstrument)
+    playEvents(
+      allEvents.filter((e) => e.trackId === 'acid' || e.trackId === 'drums'),
+      {} as AudioContext,
+      () => ({}) as AudioNode,
+      (id) => (id === 'acid' ? fakeInstrument : {
+        id,
+        kind: 'synth',
+        noteOn: () => ({ stop() {} }),
+      }),
+      {
+        triggerSidechain(time, velocity) {
+          sidechains.push({ time, velocity })
+        },
+      },
+    )
+    expect(seenGlides).toEqual([undefined, 48, undefined])
+    expect(sidechains).toEqual([{ time: 0, velocity: 120 }])
+  })
 })

@@ -256,7 +256,7 @@ export class Engine {
     }
     for (const event of step.events) {
       try {
-        const notes = playEvents([event], audio, (item) => this.outputFor(item))
+        const notes = playEvents([event], audio, (item) => this.outputFor(item), undefined, this.mix)
         for (const note of notes) this.voices.push({ trackId: event.trackId, note, stopTime: event.stopTime })
       } catch {
         this.report(event.instrumentId)
@@ -274,9 +274,9 @@ export class Engine {
     const { project } = state
     for (const track of project.tracks) {
       if (this.mix !== undefined) {
-        this.mix.input(track.id, isTrackAudible(track, project.tracks) ? track.gain : 0, track.synth, track.pan)
+        this.mix.input(track.id, isTrackAudible(track, project.tracks) ? track.gain : 0, track.synth, track.pan, track.instrumentId)
         if (track.id === state.selectedTrackId) {
-          this.mix.input('preview', track.gain, track.synth, track.pan)
+          this.mix.input('preview', track.gain, track.synth, track.pan, track.instrumentId)
         }
       }
       if (track.instrumentId === 'drums') continue
@@ -315,7 +315,7 @@ export class Engine {
 
   private outputFor(event: ScheduleEvent): GainNode {
     if (this.mix === undefined) throw new Error('audio_unavailable')
-    return this.mix.input(event.trackId, event.gain, event.synth, event.pan)
+    return this.mix.input(event.trackId, event.gain, event.synth, event.pan, event.instrumentId)
   }
 
   private stopVoices(when: number): void {

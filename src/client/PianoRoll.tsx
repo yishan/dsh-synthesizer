@@ -14,6 +14,7 @@ import { Icon } from './icons.tsx'
 import { DRUM_LABELS } from './instruments.ts'
 import {
   addDrumFill,
+  addEuclideanDrumRhythm,
   buildScaleChord,
   CHORD_PROGRESSIONS,
   DRUM_PATTERN_LIST,
@@ -546,14 +547,24 @@ export function PianoRoll({ track, bars, playing }: { track: Track; bars: number
                       </>
                     )}
                     {drums ? (
-                      <button
-                        type="button"
-                        title="在最后一小节末尾半拍生成军鼓/通鼓加花过渡（可撤销）"
-                        onClick={() => { store.setTrackNotes(track.id, addDrumFill(track.notes, bars)) }}
-                        className="dsyn-btn"
-                      >
-                        末尾加花
-                      </button>
+                      <>
+                        <button
+                          type="button"
+                          title="在最后一小节末尾半拍生成军鼓/通鼓加花过渡（可撤销）"
+                          onClick={() => { store.setTrackNotes(track.id, addDrumFill(track.notes, bars)) }}
+                          className="dsyn-btn"
+                        >
+                          末尾加花
+                        </button>
+                        <button
+                          type="button"
+                          title="使用欧几里得算法 E(5,16) 生成多节奏边击/开镲律动层（可撤销）"
+                          onClick={() => { store.setTrackNotes(track.id, addEuclideanDrumRhythm(track.notes, bars)) }}
+                          className="dsyn-btn"
+                        >
+                          欧几里得律动
+                        </button>
+                      </>
                     ) : null}
                     <button
                       type="button"

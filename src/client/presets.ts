@@ -604,6 +604,43 @@ export function addDrumFill(notes: readonly Note[], bars: number): Note[] {
   return sortNotes([...kept, ...fill])
 }
 
+/**
+ * Overlay a Euclidean E(k, n) percussion rhythm across each bar (default E(5, 16) Cinquillo
+ * on Rimshot plus a subtle Open-Hat accent on every 2nd bar's final Euclidean pulse).
+ */
+export function addEuclideanDrumRhythm(
+  notes: readonly Note[],
+  bars: number,
+  pulses = 5,
+  steps = 16,
+  pitch = DRUM_RIM,
+  velocity = 94,
+): Note[] {
+  const kept = notes.filter((note) => note.pitch !== pitch)
+  const safeSteps = Math.max(1, Math.round(steps))
+  const safePulses = Math.max(1, Math.min(safeSteps, Math.round(pulses)))
+  const stepDur = BEATS_PER_BAR / safeSteps
+  const occupiedOpenHatBeats = new Set(
+    kept.filter((note) => note.pitch === DRUM_OPEN_HAT).map((note) => note.startBeat.toFixed(4)),
+  )
+  const added: Note[] = []
+  for (let bar = 0; bar < bars; bar += 1) {
+    const b = bar * BEATS_PER_BAR
+    let lastHitBeat: number | undefined
+    for (let step = 0; step < safeSteps; step += 1) {
+      if ((step * safePulses) % safeSteps < safePulses) {
+        const beat = b + step * stepDur
+        added.push(n(pitch, beat, Math.min(0.25, stepDur), step % 4 === 0 ? Math.min(127, velocity + 10) : velocity))
+        lastHitBeat = beat
+      }
+    }
+    if (bar % 2 === 1 && lastHitBeat !== undefined && !occupiedOpenHatBeats.has(lastHitBeat.toFixed(4))) {
+      added.push(n(DRUM_OPEN_HAT, lastHitBeat, Math.min(0.25, stepDur), 82))
+    }
+  }
+  return sortNotes([...kept, ...added])
+}
+
 export interface SongPresetItem {
   id: string
   title: string

@@ -4,6 +4,7 @@ import { saveProject } from '../src/client/api.ts'
 import { DEFAULT_SYNTH_PATCHES } from '../src/client/instruments.ts'
 import {
   addDrumFill,
+  addEuclideanDrumRhythm,
   buildScaleChord,
   CHORD_PROGRESSIONS,
   generateMelodicPattern,
@@ -557,5 +558,23 @@ describe('project client', () => {
     expect(jazzBass.find((n) => n.startBeat === 0)?.pitch).toBe(38)
     expect(bar1RootPop).toBe(43)
     expect(bar1RootJazz).toBe(43)
+  })
+
+  it('overlays E(5,16) Euclidean drum rhythm cleanly without erasing kick/snare hits', () => {
+    const existing = [
+      { pitch: 36, startBeat: 0, durationBeats: 0.25, velocity: 115 },
+      { pitch: 38, startBeat: 1, durationBeats: 0.25, velocity: 110 },
+      { pitch: 37, startBeat: 0.5, durationBeats: 0.25, velocity: 90 },
+    ]
+    const result = addEuclideanDrumRhythm(existing, 2, 5, 16)
+    // Existing kick and snare stay intact
+    expect(result.filter((n) => n.pitch === 36)).toHaveLength(1)
+    expect(result.filter((n) => n.pitch === 38)).toHaveLength(1)
+    // E(5, 16) across 2 bars produces 5 * 2 = 10 evenly distributed Rimshot hits, replacing old rimshots
+    const rims = result.filter((n) => n.pitch === 37)
+    expect(rims).toHaveLength(10)
+    expect(rims.slice(0, 5).map((n) => n.startBeat)).toEqual([0, 1, 1.75, 2.5, 3.25])
+    // Plus 1 open-hat accent on the 2nd bar's final pulse (7.25)
+    expect(result.some((n) => n.pitch === 46 && n.startBeat === 7.25)).toBe(true)
   })
 })

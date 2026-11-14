@@ -1,6 +1,7 @@
 /** Lookahead scheduler. Timing uses the audio clock, not the timer that polls it. */
 import { getInstrument, type Instrument, type ScheduledNote } from './instruments.ts'
-import { isTrackAudible, STEP_BEATS, type Project, type SynthPatch } from '../model.ts'
+import type { MixGraph } from './mix.ts'
+import { DRUM_KICK, isTrackAudible, STEP_BEATS, type Note, type Project, type SynthPatch } from '../model.ts'
 
 export interface SchedulerState {
   origin: number
@@ -20,7 +21,10 @@ export interface ScheduleEvent {
   kit?: string
   time: number
   stopTime: number
+  glideFromPitch?: number
 }
+
+const LEGATO_GLIDE_INSTRUMENTS = new Set<string>(['acid', 'bass', 'lead'])
 
 export interface ScheduleStep {
   state: SchedulerState
@@ -65,7 +69,20 @@ function collect(
     if (windowEnd <= windowStart) continue
     for (const track of project.tracks) {
       if (!isTrackAudible(track, project.tracks)) continue
-      for (const note of track.notes) {
+      const supportsGlide = LEGATO_GLIDE_INSTRUMENTS.has(track.instrumentId)
+      const notes = supportsGlide
+        ? [...track.notes].sort((a, b) => a.startBeat - b.startBeat || a.pitch - b.pitch)
+        : track.notes
+      let prevNote: Note | undefined
+      for (const note of notes) {
+        const glideFromPitch = supportsGlide
+          && prevNote !== undefined
+          && prevNote.pitch !== note.pitch
+          && prevNote.startBeat < note.startBeat - 1e-6
+          && prevNote.startBeat + prevNote.durationBeats >= note.startBeat - 1e-6
+          ? prevNote.pitch
+          : undefined
+        prevNote = note
         if (note.startBeat < windowStart || note.startBeat >= windowEnd) continue
         const beat = loopStart + note.startBeat
         // Swing delays the start only; the note still ends where it was drawn to end.
@@ -82,6 +99,7 @@ function collect(
           kit: track.kit,
           time,
           stopTime: origin + (beat + note.durationBeats) * secondsPerBeat,
+          ...(glideFromPitch !== undefined ? { glideFromPitch } : {}),
         })
       }
     }
@@ -138,6 +156,7 @@ export function playEvents(
   ctx: AudioContext,
   destinationFor: (event: ScheduleEvent) => AudioNode,
   resolve: (id: string) => Instrument = getInstrument,
+  mix?: Pick<MixGraph, 'triggerSidechain'>,
 ): ScheduledNote[] {
   const voices: ScheduledNote[] = []
   for (const event of events) {
@@ -150,9 +169,13 @@ export function playEvents(
       event.velocity,
       event.synth,
       event.kit,
+      event.glideFromPitch,
     )
     voice.stop(event.stopTime)
     voices.push(voice)
+    if (event.instrumentId === 'drums' && event.pitch === DRUM_KICK) {
+      mix?.triggerSidechain?.(event.time, event.velocity)
+    }
   }
   return voices
 }

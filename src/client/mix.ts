@@ -7,9 +7,10 @@ import type { SynthPatch } from '../model.ts'
 
 export interface MixGraph {
   /** The node a track's voices connect to. Updates that track's level, pan, and sends. */
-  input(trackId: string, gain: number, synth: SynthPatch | undefined, pan?: number): GainNode
+  input(trackId: string, gain: number, synth: SynthPatch | undefined, pan?: number, instrumentId?: string): GainNode
   setTempo(bpm: number): void
   setMuted(muted: boolean): void
+  triggerSidechain?(time: number, velocity?: number): void
   readonly analyser: AnalyserNode | undefined
 }
 
@@ -50,6 +51,9 @@ function impulseResponse(ctx: BaseAudioContext): AudioBuffer {
 export function createMixGraph(ctx: BaseAudioContext, destination: AudioNode): MixGraph {
   const master = ctx.createGain()
   master.gain.setValueAtTime(MASTER_LEVEL, ctx.currentTime)
+  const duckBus = ctx.createGain()
+  duckBus.gain.setValueAtTime(1, ctx.currentTime)
+  duckBus.connect(master)
 
   let tail: AudioNode = master
   if (typeof ctx.createDynamicsCompressor === 'function') {
@@ -77,18 +81,34 @@ export function createMixGraph(ctx: BaseAudioContext, destination: AudioNode): M
   }
   tail.connect(destination)
 
-  let delay: DelayNode | undefined
+  let delayL: DelayNode | undefined
+  let delayR: DelayNode | undefined
   if (typeof ctx.createDelay === 'function') {
-    delay = ctx.createDelay(2.0)
+    delayL = ctx.createDelay(2.0)
     const feedback = ctx.createGain()
-    feedback.gain.setValueAtTime(0.34, ctx.currentTime)
+    feedback.gain.setValueAtTime(0.32, ctx.currentTime)
     const tone = ctx.createBiquadFilter()
     tone.type = 'lowpass'
     tone.frequency.setValueAtTime(2600, ctx.currentTime)
-    delay.connect(tone)
-    tone.connect(feedback)
-    feedback.connect(delay)
-    tone.connect(master)
+    delayL.connect(tone)
+    if (typeof ctx.createStereoPanner === 'function') {
+      delayR = ctx.createDelay(2.0)
+      const panL = ctx.createStereoPanner()
+      const panR = ctx.createStereoPanner()
+      panL.pan.setValueAtTime(-0.55, ctx.currentTime)
+      panR.pan.setValueAtTime(0.55, ctx.currentTime)
+      tone.connect(panL)
+      panL.connect(duckBus)
+      tone.connect(delayR)
+      delayR.connect(panR)
+      panR.connect(duckBus)
+      delayR.connect(feedback)
+      feedback.connect(delayL)
+    } else {
+      tone.connect(feedback)
+      feedback.connect(delayL)
+      tone.connect(duckBus)
+    }
   }
 
   let reverb: ConvolverNode | undefined
@@ -105,7 +125,7 @@ export function createMixGraph(ctx: BaseAudioContext, destination: AudioNode): M
 
   return {
     analyser,
-    input(trackId, gain, synth, pan = 0) {
+    input(trackId, gain, synth, pan = 0, instrumentId) {
       let bus = buses.get(trackId)
       if (bus === undefined) {
         const dry = ctx.createGain()
@@ -113,10 +133,11 @@ export function createMixGraph(ctx: BaseAudioContext, destination: AudioNode): M
         const delaySend = ctx.createGain()
         const reverbSend = ctx.createGain()
         const positioned: AudioNode = panner !== undefined ? (dry.connect(panner), panner) : dry
-        positioned.connect(master)
-        if (delay !== undefined) {
+        const isDrums = instrumentId === 'drums' || trackId === 'drums'
+        positioned.connect(isDrums ? master : duckBus)
+        if (delayL !== undefined) {
           positioned.connect(delaySend)
-          delaySend.connect(delay)
+          delaySend.connect(delayL)
         }
         if (reverb !== undefined) {
           positioned.connect(reverbSend)
@@ -134,12 +155,20 @@ export function createMixGraph(ctx: BaseAudioContext, destination: AudioNode): M
       return bus.dry
     },
     setTempo(bpm) {
-      if (delay === undefined) return
       const dottedEighth = Math.max(0.08, Math.min(1.2, (60 / bpm) * 0.75))
-      delay.delayTime.setValueAtTime(dottedEighth, ctx.currentTime)
+      delayL?.delayTime.setValueAtTime(dottedEighth, ctx.currentTime)
+      delayR?.delayTime.setValueAtTime(dottedEighth, ctx.currentTime)
     },
     setMuted(muted) {
       master.gain.setValueAtTime(muted ? 0 : MASTER_LEVEL, ctx.currentTime)
+    },
+    triggerSidechain(time, velocity = 100) {
+      const velNorm = Math.max(0.3, Math.min(1, velocity / 127))
+      const dip = Math.max(0.38, 1 - 0.48 * velNorm)
+      duckBus.gain.cancelScheduledValues?.(time)
+      duckBus.gain.setValueAtTime(1, time)
+      duckBus.gain.linearRampToValueAtTime(dip, time + 0.008)
+      duckBus.gain.exponentialRampToValueAtTime?.(1, time + 0.16)
     },
   }
 }

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { DEFAULT_SYNTH_PATCHES, DRUM_KITS, drumPiece, getDrumKit, getInstrument, listInstruments } from '../src/client/instruments.ts'
+import { createMixGraph } from '../src/client/mix.ts'
 import { SYNTH_PATCH_PRESETS, isPreset, presetsFor } from '../src/client/presets.ts'
 import { DRUM_PITCHES, synthPatchSchema } from '../src/schema.ts'
 import { auditionBase, auditionPitch } from '../src/client/audition.ts'
@@ -323,5 +324,73 @@ describe('instruments', () => {
       1,
     )
     expect(lfoOsc?.frequency.values.find((e) => e.time === 0.1)?.value).toBe(8)
+  })
+
+  it('glides oscillator and sub frequencies on legato noteOn when glideFromPitch is provided', () => {
+    const fake = fakeContext()
+    const patch = { ...DEFAULT_SYNTH_PATCHES.acid!, subMix: 0.4 }
+    // Glide from C3 (48, 130.81Hz) to C4 (60, 261.63Hz)
+    getInstrument('acid').noteOn(fake.ctx, {} as AudioNode, 0.2, 60, 100, patch, undefined, 48).stop(0.6)
+    const oscs = fake.created.filter((node) => node.kind === 'osc')
+    expect(oscs).toHaveLength(2) // main + sub
+
+    const [mainOsc, subOsc] = oscs
+    expect(mainOsc?.frequency.values[0]).toEqual({ method: 'set', value: expect.any(Number), time: 0.2 })
+    expect(mainOsc?.frequency.values[0]?.value).toBeCloseTo(130.81, 1)
+    expect(mainOsc?.frequency.values[1]?.method).toBe('exp')
+    expect(mainOsc?.frequency.values[1]?.value).toBeCloseTo(261.63, 1)
+    expect(mainOsc?.frequency.values[1]?.time).toBeCloseTo(0.245, 5)
+
+    // Sub oscillator glides one octave below: C2 (36, 65.41Hz) -> C3 (48, 130.81Hz)
+    expect(subOsc?.frequency.values[0]?.value).toBeCloseTo(65.41, 1)
+    expect(subOsc?.frequency.values[1]?.method).toBe('exp')
+    expect(subOsc?.frequency.values[1]?.value).toBeCloseTo(130.81, 1)
+  })
+
+  it('routes melodic tracks through a sidechain duckBus and builds stereo ping-pong delay when supported', () => {
+    const created: Array<{ kind: string; connections: unknown[]; gain: FakeParam; pan?: FakeParam; delayTime?: FakeParam }> = []
+    const makeNode = (kind: string) => {
+      const node = {
+        kind,
+        connections: [] as unknown[],
+        gain: param(),
+        pan: param(),
+        delayTime: param(),
+        frequency: param(),
+        Q: param(),
+        type: 'lowpass',
+        connect(target: unknown) { node.connections.push(target); return target },
+      }
+      created.push(node)
+      return node
+    }
+    const ctx = {
+      currentTime: 0,
+      sampleRate: 44100,
+      createGain: () => makeNode('gain'),
+      createStereoPanner: () => makeNode('panner'),
+      createDelay: () => makeNode('delay'),
+      createBiquadFilter: () => makeNode('filter'),
+    } as unknown as BaseAudioContext
+
+    const mix = createMixGraph(ctx, {} as AudioNode)
+    const delays = created.filter((n) => n.kind === 'delay')
+    const panners = created.filter((n) => n.kind === 'panner')
+    // Stereo ping-pong delay creates 2 delay nodes and 2 opposite panners (-0.55 / +0.55)
+    expect(delays).toHaveLength(2)
+    expect(panners.some((p) => p.pan?.values.some((v) => v.value === -0.55))).toBe(true)
+    expect(panners.some((p) => p.pan?.values.some((v) => v.value === 0.55))).toBe(true)
+
+    mix.input('bass-1', 0.8, DEFAULT_SYNTH_PATCHES.bass, 0, 'bass')
+    mix.input('drums-1', 0.9, undefined, 0, 'drums')
+    mix.triggerSidechain?.(1.0, 127)
+
+    // duckBus is the 2nd gain node created after master
+    const duckBus = created.filter((n) => n.kind === 'gain')[1]
+    expect(duckBus?.gain.values).toContainEqual({ method: 'cancel', value: 0, time: 1.0 })
+    const dip = duckBus?.gain.values.find((v) => v.method === 'linear' && v.time === 1.008)
+    const recover = duckBus?.gain.values.find((v) => v.method === 'exp' && v.time === 1.16)
+    expect(dip?.value).toBeCloseTo(0.52, 2)
+    expect(recover?.value).toBe(1)
   })
 })

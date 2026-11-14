@@ -87,7 +87,16 @@ interface CommandsFace {
   }) => () => void
 }
 
-const VALID_SCALES = new Set<string>(['major', 'minor', 'dorian', 'mixolydian', 'pentatonic', 'blues'])
+const VALID_SCALES = new Set<string>([
+  'major',
+  'minor',
+  'dorian',
+  'mixolydian',
+  'phrygian',
+  'pentatonic',
+  'blues',
+  'chromatic',
+])
 
 function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value))
@@ -293,11 +302,11 @@ export function registerAgentTools(toolsCtx: Context, projects: ProjectStore, tr
         bpm: { type: 'integer', description: 'Tempo in beats per minute (40-240).' },
         bars: { type: 'integer', description: 'Loop length in bars (1-32, 4 beats per bar).' },
         swing: { type: 'number', description: 'Optional 16th-note swing (0 to 0.6).' },
-        scaleRoot: { type: 'integer', description: 'Scale root pitch class 0..11 (0=C, 2=D, 5=F, 7=G, 9=A).' },
+        scaleRoot: { type: 'integer', description: 'Scale root pitch class 0..11 (0=C, 1=C#, 2=D, 3=Eb, 4=E, 5=F, 6=F#, 7=G, 8=Ab, 9=A, 10=Bb, 11=B).' },
         scaleId: {
           type: 'string',
-          enum: ['major', 'minor', 'dorian', 'mixolydian', 'pentatonic', 'blues'],
-          description: 'Musical scale id.',
+          enum: ['major', 'minor', 'dorian', 'mixolydian', 'phrygian', 'pentatonic', 'blues', 'chromatic'],
+          description: 'Musical scale id (major | minor | dorian | mixolydian | phrygian | pentatonic | blues | chromatic).',
         },
         tracks: {
           type: 'array',

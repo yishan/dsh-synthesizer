@@ -229,4 +229,60 @@ describe('instruments', () => {
     }
     expect(oscillators({ ...base, lfoTarget: 'pitch', lfoRate: 5, lfoDepth: 0 })).toBe(dry)
   })
+
+  it('applies filter key tracking, velocity-to-filter modulation, and exponential filter decay', () => {
+    const patch = {
+      ...DEFAULT_SYNTH_PATCHES.acid!,
+      cutoff: 800,
+      envMod: 0.6,
+      sustain: 0.25,
+    }
+    const low = fakeContext()
+    getInstrument('acid').noteOn(low.ctx, {} as AudioNode, 0, 36, 40, patch).stop(0.3)
+    const high = fakeContext()
+    getInstrument('acid').noteOn(high.ctx, {} as AudioNode, 0, 84, 120, patch).stop(0.3)
+
+    const lowFilter = low.created.find((node) => node.kind === 'filter')?.frequency.values ?? []
+    const highFilter = high.created.find((node) => node.kind === 'filter')?.frequency.values ?? []
+
+    const lowBase = lowFilter.find((entry) => entry.method === 'set')?.value ?? 0
+    const highBase = highFilter.find((entry) => entry.method === 'set')?.value ?? 0
+    const lowPeak = lowFilter.find((entry) => entry.method === 'linear')?.value ?? 0
+    const highPeak = highFilter.find((entry) => entry.method === 'linear')?.value ?? 0
+
+    expect(highBase).toBeCloseTo(800 * 2, 1)
+    expect(lowBase).toBeCloseTo(800 * 0.5, 1)
+    expect(highPeak).toBeGreaterThan(lowPeak)
+    expect(highFilter.some((entry) => entry.method === 'exp')).toBe(true)
+  })
+
+  it('spawns a 3-oscillator center-anchored unison when detune >= 16', () => {
+    const patch = DEFAULT_SYNTH_PATCHES.pad
+    if (patch === undefined) throw new Error('pad patch missing')
+    expect(patch.detune).toBeGreaterThanOrEqual(16)
+
+    const fake = fakeContext()
+    getInstrument('pad').noteOn(fake.ctx, {} as AudioNode, 0, 60, 100, patch).stop(0.4)
+    const oscs = fake.created.filter((node) => node.kind === 'osc')
+    // 3 unison oscillators (-16, 0, +16 cents) + 1 sub oscillator (subMix: 0.18)
+    expect(oscs).toHaveLength(4)
+    const unisonFreqs = oscs.slice(0, 3).map((osc) => osc.frequency.values[0]?.value ?? 0)
+    expect(unisonFreqs[1]).toBeCloseTo(261.63, 1)
+    expect(unisonFreqs[0]).toBeLessThan(unisonFreqs[1]!)
+    expect(unisonFreqs[2]).toBeGreaterThan(unisonFreqs[1]!)
+  })
+
+  it('chokes a ringing open hi-hat when a closed hi-hat triggers on the same context', () => {
+    const fake = fakeContext()
+    getInstrument('drums').noteOn(fake.ctx, {} as AudioNode, 0, 46, 100).stop(0.05)
+    const openHatGain = fake.created.find((node) => node.kind === 'gain')
+    expect(openHatGain).toBeDefined()
+
+    getInstrument('drums').noteOn(fake.ctx, {} as AudioNode, 0.05, 42, 95).stop(0.1)
+    expect(openHatGain?.gain.values).toContainEqual({ method: 'cancel', value: 0, time: 0.05 })
+    const chokeRamp = openHatGain?.gain.values.find(
+      (entry) => entry.method === 'linear' && Math.abs(entry.value - 0.0001) < 1e-6,
+    )
+    expect(chokeRamp?.time).toBeCloseTo(0.062, 5)
+  })
 })

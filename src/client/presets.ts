@@ -236,20 +236,27 @@ export interface ScaleDefinition {
 export const SCALES: readonly ScaleDefinition[] = [
   { id: 'minor', name: '自然小调 Minor', intervals: [0, 2, 3, 5, 7, 8, 10] },
   { id: 'major', name: '自然大调 Major', intervals: [0, 2, 4, 5, 7, 9, 11] },
-  { id: 'pentatonic', name: '小调五声 Penta', intervals: [0, 3, 5, 7, 10] },
   { id: 'dorian', name: '多利亚 Dorian', intervals: [0, 2, 3, 5, 7, 9, 10] },
+  { id: 'mixolydian', name: '混合利底亚 Mixo', intervals: [0, 2, 4, 5, 7, 9, 10] },
+  { id: 'phrygian', name: '弗里几亚 Phryg', intervals: [0, 1, 3, 5, 7, 8, 10] },
+  { id: 'pentatonic', name: '小调五声 Penta', intervals: [0, 3, 5, 7, 10] },
+  { id: 'blues', name: '布鲁斯 Blues', intervals: [0, 3, 5, 6, 7, 10] },
   { id: 'chromatic', name: '半音阶 All', intervals: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11] },
 ]
 
 export const ROOT_NOTES = [
   { semitone: 0, name: 'C' },
+  { semitone: 1, name: 'C#' },
   { semitone: 2, name: 'D' },
   { semitone: 3, name: 'Eb' },
   { semitone: 4, name: 'E' },
   { semitone: 5, name: 'F' },
+  { semitone: 6, name: 'F#' },
   { semitone: 7, name: 'G' },
+  { semitone: 8, name: 'Ab' },
   { semitone: 9, name: 'A' },
   { semitone: 10, name: 'Bb' },
+  { semitone: 11, name: 'B' },
 ] as const
 
 export function isPitchInScale(pitch: number, rootSemitone: number, scaleId: string): boolean {
@@ -408,16 +415,38 @@ export function generateMelodicPattern(
   }
 
   if (patternId === 'chords') {
+    let prevUpperCenter = 64
     for (let bar = 0; bar < bars; bar += 1) {
       const deg = progDegrees[bar % progDegrees.length] ?? 0
       const b = bar * 4
-      const triad = [
-        degreePitch(48, deg),
-        degreePitch(48, deg + 2),
-        degreePitch(48, deg + 4),
-        degreePitch(48, deg + 6),
+      const rawRoot = degreePitch(48, deg)
+      const bassPitch = 48 + (((rawRoot - 48) % 12 + 12) % 12)
+      const upperRaw = [
+        degreePitch(60, deg + 2),
+        degreePitch(60, deg + 4),
+        degreePitch(60, deg + 6),
       ]
-      const unique = [...new Set(triad)]
+      const upperVoiced = upperRaw
+        .map((raw) => {
+          const pc = ((raw % 12) + 12) % 12
+          let best = 60 + pc
+          let bestDist = Infinity
+          for (let oct = 4; oct <= 6; oct += 1) {
+            const cand = oct * 12 + pc
+            if (cand <= bassPitch + 2 || cand < 56 || cand > 76) continue
+            const dist = Math.abs(cand - prevUpperCenter)
+            if (dist < bestDist) {
+              bestDist = dist
+              best = cand
+            }
+          }
+          return best
+        })
+        .sort((a, bPitch) => a - bPitch)
+      if (upperVoiced.length > 0) {
+        prevUpperCenter = upperVoiced.reduce((sum, p) => sum + p, 0) / upperVoiced.length
+      }
+      const unique = [...new Set([bassPitch, ...upperVoiced])]
       for (const pitch of unique) {
         notes.push(n(pitch, b, 3.75, 86))
       }

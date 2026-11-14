@@ -201,6 +201,7 @@ export function resolveSynthPatch(instrumentId: string, custom?: SynthPatch): Sy
 
 const registry = new Map<string, Instrument>()
 const noiseBuffers = new WeakMap<AudioContext, AudioBuffer>()
+const activeOpenHats = new WeakMap<AudioContext, { gain: GainNode; startAt: number; stopAt: number }>()
 const driveCurves = new Map<number, Float32Array<ArrayBuffer>>()
 
 export function registerInstrument(instrument: Instrument): void {
@@ -290,7 +291,8 @@ function tone(
   options: ToneOptions,
 ): ScheduledNote {
   const gain = ctx.createGain()
-  const peak = amplitude(velocity) * (options.drive !== undefined && options.drive > 0 ? 1 + options.drive * 0.25 : 1)
+  const unisonNorm = (options.detuneCents?.length ?? 1) >= 3 ? 0.82 : 1
+  const peak = amplitude(velocity) * unisonNorm * (options.drive !== undefined && options.drive > 0 ? 1 + options.drive * 0.25 : 1)
   const sustainLevel = peak * options.sustain
   const attackEnd = time + options.attack
   const decayEnd = attackEnd + options.decay
@@ -312,16 +314,20 @@ function tone(
   if (options.filterHz !== undefined) {
     filter = ctx.createBiquadFilter()
     filter.type = 'lowpass'
-    const baseHz = Math.max(40, Math.min(16000, options.filterHz))
+    const keyTrack = 2 ** (((pitch - 60) / 12) * 0.5)
+    const baseHz = Math.max(40, Math.min(16000, options.filterHz * keyTrack))
     filterBaseHz = baseHz
+    const velNorm = Math.max(0, Math.min(1, velocity / 127))
+    const velFilterScale = 0.5 + 0.5 * velNorm
     const modHz = options.envMod !== undefined && options.envMod > 0
-      ? Math.min(16000, baseHz + options.envMod * 7200)
+      ? Math.min(16000, baseHz + options.envMod * velFilterScale * 7200)
       : baseHz
     filter.frequency.setValueAtTime(baseHz, time)
     if (modHz > baseHz + 1) {
       filter.frequency.linearRampToValueAtTime(modHz, attackEnd)
-      filter.frequency.linearRampToValueAtTime(
-        baseHz + (modHz - baseHz) * options.sustain * 0.35,
+      const sustainCutoff = Math.max(40, baseHz + (modHz - baseHz) * options.sustain * 0.35)
+      filter.frequency.exponentialRampToValueAtTime(
+        sustainCutoff,
         decayEnd + options.decay * 0.3,
       )
     }
@@ -429,7 +435,11 @@ function tone(
 }
 
 function patchToToneOptions(patch: SynthPatch): ToneOptions {
-  const detuneCents = patch.detune > 0.5 ? [-patch.detune, patch.detune] : [0]
+  const detuneCents = patch.detune >= 16
+    ? [-patch.detune, 0, patch.detune]
+    : patch.detune > 0.5
+      ? [-patch.detune, patch.detune]
+      : [0]
   return {
     type: patch.waveform,
     detuneCents,
@@ -466,6 +476,7 @@ function noiseHit(
   velocity: number,
   decay: number,
   highpass: number | null,
+  onGain?: (gain: GainNode) => void,
 ): ScheduledNote {
   const source = ctx.createBufferSource()
   source.buffer = noiseBuffer(ctx)
@@ -485,6 +496,7 @@ function noiseHit(
   gain.connect(out)
   source.start(time)
   source.stop(time + decay + 0.02)
+  onGain?.(gain)
   return RING_OUT
 }
 
@@ -601,6 +613,15 @@ function sweepHit(ctx: AudioContext, out: AudioNode, time: number, velocity: num
   return RING_OUT
 }
 
+function chokeOpenHat(ctx: AudioContext, time: number): void {
+  const ringing = activeOpenHats.get(ctx)
+  if (ringing !== undefined && ringing.startAt <= time && ringing.stopAt > time + 0.005) {
+    ringing.gain.gain.cancelScheduledValues(time)
+    ringing.gain.gain.linearRampToValueAtTime(0.0001, time + 0.012)
+    activeOpenHats.delete(ctx)
+  }
+}
+
 function playDrum(
   ctx: AudioContext,
   out: AudioNode,
@@ -639,9 +660,13 @@ function playDrum(
       }).stop(time + kit.rim.decay)
       return RING_OUT
     case 'hat':
+      chokeOpenHat(ctx, time)
       return noiseHit(ctx, out, time, velocity * kit.hat.level, kit.hat.decay, kit.hat.highpass)
     case 'openHat':
-      return noiseHit(ctx, out, time, velocity * kit.openHat.level, kit.openHat.decay, kit.openHat.highpass)
+      chokeOpenHat(ctx, time)
+      return noiseHit(ctx, out, time, velocity * kit.openHat.level, kit.openHat.decay, kit.openHat.highpass, (gain) => {
+        activeOpenHats.set(ctx, { gain, startAt: time, stopAt: time + kit.openHat.decay })
+      })
     case 'cymbal':
       tone(ctx, out, time, 84, velocity * 0.5, {
         type: 'square',

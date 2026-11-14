@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Project } from '../src/schema.ts'
 import { saveProject } from '../src/client/api.ts'
 import { DEFAULT_SYNTH_PATCHES } from '../src/client/instruments.ts'
-import { addDrumFill, buildScaleChord, humanizeNotes, SONG_PRESETS } from '../src/client/presets.ts'
+import { addDrumFill, buildScaleChord, generateMelodicPattern, humanizeNotes, ROOT_NOTES, SCALES, SONG_PRESETS } from '../src/client/presets.ts'
 import { ProjectClient } from '../src/client/project-store.ts'
 
 /** Minimal in-memory localStorage. */
@@ -481,5 +481,41 @@ describe('project client', () => {
     await client.acceptPendingToolProject()
     expect(client.getState().project.id).toBe('tool-song-2')
     expect(client.getState().pendingToolProject).toBeNull()
+  })
+
+  it('exposes 12 chromatic roots, 8 scales, and applies smooth voice leading to chord progressions', () => {
+    expect(ROOT_NOTES.map((r) => r.semitone)).toEqual([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11])
+    expect(SCALES.map((s) => s.id)).toEqual([
+      'minor',
+      'major',
+      'dorian',
+      'mixolydian',
+      'phrygian',
+      'pentatonic',
+      'blues',
+      'chromatic',
+    ])
+
+    const notes = generateMelodicPattern('chords', 4, 0, 'minor', [0, 5, 3, 4])
+    const barUpperMeans: number[] = []
+    for (let bar = 0; bar < 4; bar += 1) {
+      const chord = notes
+        .filter((note) => note.startBeat === bar * 4)
+        .map((note) => note.pitch)
+        .sort((a, b) => a - b)
+      expect(chord.length).toBeGreaterThanOrEqual(3)
+      const [bass, ...upper] = chord
+      expect(bass).toBeGreaterThanOrEqual(48)
+      expect(bass).toBeLessThanOrEqual(59)
+      for (const pitch of upper) {
+        expect(pitch).toBeGreaterThanOrEqual(56)
+        expect(pitch).toBeLessThanOrEqual(76)
+      }
+      barUpperMeans.push(upper.reduce((sum, p) => sum + p, 0) / upper.length)
+    }
+
+    for (let i = 1; i < barUpperMeans.length; i += 1) {
+      expect(Math.abs(barUpperMeans[i]! - barUpperMeans[i - 1]!)).toBeLessThan(5)
+    }
   })
 })

@@ -6,6 +6,7 @@ import { isPreset, presetsFor } from './presets.ts'
 import { Icon } from './icons.tsx'
 import { getProjectStore } from './project-store.ts'
 import { rangeFill } from './styles.ts'
+import { useProject } from './use-project.ts'
 
 const WAVEFORMS: ReadonlyArray<{ id: SynthWaveform; label: string }> = [
   { id: 'sawtooth', label: '锯齿' },
@@ -48,6 +49,7 @@ function brightnessToCutoff(brightness: number): number {
 /** Sound tab of the editor drawer: drum pads for a drum track, patch controls otherwise. */
 export function SynthControls({ track, playing }: { track: Track; playing: boolean }): JSX.Element {
   const store = getProjectStore()
+  const state = useProject()
   const engine = getEngine()
   const [showAdvanced, setShowAdvanced] = useState(false)
   const isDrums = track.instrumentId === 'drums'
@@ -80,7 +82,7 @@ export function SynthControls({ track, playing }: { track: Track; playing: boole
               </button>
             ))}
           </div>
-          <Oscilloscope patch={patch} playing={playing} isDrums />
+          {state.showOscilloscope ? <Oscilloscope patch={patch} playing={playing} isDrums /> : null}
         </div>
         <div className="dsyn-line" aria-label="鼓组试听">
           <span className="dsyn-label">试听</span>
@@ -159,7 +161,7 @@ export function SynthControls({ track, playing }: { track: Track; playing: boole
             <Icon name="speaker" />
             试听
           </button>
-          <Oscilloscope patch={patch} playing={playing} isDrums={false} />
+          {state.showOscilloscope ? <Oscilloscope patch={patch} playing={playing} isDrums={false} /> : null}
         </div>
       </div>
 

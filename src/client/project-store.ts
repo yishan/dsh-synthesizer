@@ -23,9 +23,14 @@ import { deleteProject, listProjectsWithSync, readProject, saveProject, type Pro
 import {
   clearViewState,
   getLastProjectId,
+  loadSettings,
   loadViewState,
+  resetSettings as resetStoredSettings,
+  saveSettings,
   saveViewState,
   setLastProjectId,
+  type SidechainStrength,
+  type SynthSettings,
 } from './local-state.ts'
 import { DEFAULT_SYNTH_PATCHES, defaultTrackName, resolveSynthPatch } from './instruments.ts'
 import { createStarterProject, generateRandomGrooveProject, SONG_PRESETS, type SynthPresetItem } from './presets.ts'
@@ -47,6 +52,14 @@ export interface SessionState {
   midiDevices: readonly string[]
   showGhostNotes: boolean
   showOnboarding: boolean
+  showSidebarTransport: boolean
+  showSidebarTip: boolean
+  backgroundPlayback: boolean
+  masterVolume: number
+  sidechainStrength: SidechainStrength
+  auditionOnDraw: boolean
+  qwertyPianoEnabled: boolean
+  showOscilloscope: boolean
   saving: boolean
   /** The last save did not reach the Host; the edits exist only in this page. */
   saveFailed: boolean
@@ -87,6 +100,20 @@ function summaryOf(project: Project, previous: readonly ProjectSummary[]): Proje
   return next
 }
 
+function settingsStateFrom(settings: SynthSettings) {
+  return {
+    showGhostNotes: settings.showGhostNotes,
+    showSidebarTransport: settings.showSidebarTransport,
+    showSidebarTip: !settings.sidebarTipDismissed,
+    backgroundPlayback: settings.backgroundPlayback,
+    masterVolume: settings.masterVolume,
+    sidechainStrength: settings.sidechainStrength,
+    auditionOnDraw: settings.auditionOnDraw,
+    qwertyPianoEnabled: settings.qwertyPianoEnabled,
+    showOscilloscope: settings.showOscilloscope,
+  }
+}
+
 export class ProjectClient {
   private state: SessionState
   private listeners = new Set<() => void>()
@@ -105,6 +132,7 @@ export class ProjectClient {
 
   constructor() {
     const project = createStarterProject('draft')
+    const settings = loadSettings()
     this.state = {
       ready: false,
       loadFailed: false,
@@ -119,8 +147,8 @@ export class ProjectClient {
       octaveOffset: 0,
       activePreviewPitch: null,
       midiDevices: [],
-      showGhostNotes: true,
       showOnboarding: false,
+      ...settingsStateFrom(settings),
       saving: false,
       saveFailed: false,
       lastDeleted: null,
@@ -144,6 +172,11 @@ export class ProjectClient {
   async hydrate(): Promise<void> {
     if (this.hydrated) return
     this.hydrated = true
+    const settings = loadSettings()
+    this.state = {
+      ...this.state,
+      ...settingsStateFrom(settings),
+    }
     if (this.state.loadFailed) {
       this.state = { ...this.state, loadFailed: false, error: null }
       this.emit()
@@ -321,13 +354,68 @@ export class ProjectClient {
   }
 
   setShowGhostNotes(showGhostNotes: boolean): void {
-    this.state = { ...this.state, showGhostNotes }
-    this.emit()
+    this.patchSettings({ showGhostNotes })
     this.rememberView()
   }
 
   setShowOnboarding(showOnboarding: boolean): void {
     this.state = { ...this.state, showOnboarding }
+    this.emit()
+  }
+
+  setShowSidebarTransport(showSidebarTransport: boolean): void {
+    this.patchSettings({ showSidebarTransport, sidebarTipDismissed: true })
+  }
+
+  dismissSidebarTip(): void {
+    saveSettings({ sidebarTipDismissed: true })
+    if (!this.state.showSidebarTip) return
+    this.state = { ...this.state, showSidebarTip: false }
+    this.emit()
+  }
+
+  setBackgroundPlayback(backgroundPlayback: boolean): void {
+    this.patchSettings({ backgroundPlayback })
+  }
+
+  setMasterVolume(masterVolume: number): void {
+    if (!Number.isFinite(masterVolume)) return
+    const clamped = Math.round(Math.max(0, Math.min(1, masterVolume)) * 100) / 100
+    this.patchSettings({ masterVolume: clamped })
+  }
+
+  setSidechainStrength(sidechainStrength: SidechainStrength): void {
+    this.patchSettings({ sidechainStrength })
+  }
+
+  setAuditionOnDraw(auditionOnDraw: boolean): void {
+    this.patchSettings({ auditionOnDraw })
+  }
+
+  setQwertyPianoEnabled(qwertyPianoEnabled: boolean): void {
+    this.patchSettings({ qwertyPianoEnabled })
+  }
+
+  setShowOscilloscope(showOscilloscope: boolean): void {
+    this.patchSettings({ showOscilloscope })
+  }
+
+  resetSettings(): void {
+    const defaults = resetStoredSettings()
+    this.state = {
+      ...this.state,
+      ...settingsStateFrom(defaults),
+    }
+    this.emit()
+    this.rememberView()
+  }
+
+  private patchSettings(patch: Partial<SynthSettings>): void {
+    const saved = saveSettings(patch)
+    this.state = {
+      ...this.state,
+      ...settingsStateFrom(saved),
+    }
     this.emit()
   }
 
@@ -760,7 +848,7 @@ export class ProjectClient {
         ? view.selectedTrackId ?? ''
         : sanitized.tracks[0]?.id ?? '',
       octaveOffset: view.octaveOffset ?? 0,
-      showGhostNotes: view.showGhostNotes ?? true,
+      showGhostNotes: view.showGhostNotes ?? loadSettings().showGhostNotes,
       saveFailed: false,
       canUndo: false,
       error: null,

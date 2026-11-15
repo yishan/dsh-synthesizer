@@ -19,7 +19,7 @@ export function Transport({
 }: {
   variant?: 'page' | 'sidebar'
   wide?: boolean
-}): JSX.Element {
+}): JSX.Element | null {
   const state = useProject()
   const engine = getEngine()
   const [beatLabel, setBeatLabel] = useState('1.1')
@@ -96,6 +96,9 @@ export function Transport({
         {play}{stop}{mute}{position}
       </div>
     )
+  }
+  if (!state.showSidebarTransport) {
+    return null
   }
   if (!wide) {
     return (

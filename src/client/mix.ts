@@ -4,12 +4,15 @@
  * offline WAV render build the same graph, so an export sounds like playback.
  */
 import type { SynthPatch } from '../model.ts'
+import type { SidechainStrength } from './local-state.ts'
 
 export interface MixGraph {
   /** The node a track's voices connect to. Updates that track's level, pan, and sends. */
   input(trackId: string, gain: number, synth: SynthPatch | undefined, pan?: number, instrumentId?: string): GainNode
   setTempo(bpm: number): void
   setMuted(muted: boolean): void
+  setMasterVolume?(volume: number): void
+  setSidechainStrength?(strength: SidechainStrength): void
   triggerSidechain?(time: number, velocity?: number): void
   readonly analyser: AnalyserNode | undefined
 }
@@ -122,6 +125,12 @@ export function createMixGraph(ctx: BaseAudioContext, destination: AudioNode): M
   }
 
   const buses = new Map<string, TrackBus>()
+  let isMuted = false
+  let userVolume = 1
+  let sidechainStrength: SidechainStrength = 'normal'
+  const applyMasterGain = (): void => {
+    master.gain.setValueAtTime(isMuted ? 0 : MASTER_LEVEL * userVolume, ctx.currentTime)
+  }
 
   return {
     analyser,
@@ -160,15 +169,27 @@ export function createMixGraph(ctx: BaseAudioContext, destination: AudioNode): M
       delayR?.delayTime.setValueAtTime(dottedEighth, ctx.currentTime)
     },
     setMuted(muted) {
-      master.gain.setValueAtTime(muted ? 0 : MASTER_LEVEL, ctx.currentTime)
+      isMuted = muted
+      applyMasterGain()
+    },
+    setMasterVolume(volume) {
+      userVolume = Number.isFinite(volume) ? Math.max(0, Math.min(1, volume)) : 1
+      applyMasterGain()
+    },
+    setSidechainStrength(strength) {
+      sidechainStrength = strength
     },
     triggerSidechain(time, velocity = 100) {
+      if (sidechainStrength === 'off') return
       const velNorm = Math.max(0.3, Math.min(1, velocity / 127))
-      const dip = Math.max(0.38, 1 - 0.48 * velNorm)
+      const dip = sidechainStrength === 'strong'
+        ? Math.max(0.18, 1 - 0.72 * velNorm)
+        : Math.max(0.38, 1 - 0.48 * velNorm)
+      const releaseEnd = sidechainStrength === 'strong' ? time + 0.22 : time + 0.16
       duckBus.gain.cancelScheduledValues?.(time)
       duckBus.gain.setValueAtTime(1, time)
       duckBus.gain.linearRampToValueAtTime(dip, time + 0.008)
-      duckBus.gain.exponentialRampToValueAtTime?.(1, time + 0.16)
+      duckBus.gain.exponentialRampToValueAtTime?.(1, releaseEnd)
     },
   }
 }

@@ -393,4 +393,52 @@ describe('instruments', () => {
     expect(dip?.value).toBeCloseTo(0.52, 2)
     expect(recover?.value).toBe(1)
   })
+
+  it('scales master gain with setMasterVolume and honors setSidechainStrength', () => {
+    const created: Array<{ kind: string; gain: FakeParam; connect: (t: unknown) => unknown }> = []
+    const makeNode = (kind: string) => {
+      const node = {
+        kind,
+        gain: param(),
+        pan: param(),
+        delayTime: param(),
+        frequency: param(),
+        Q: param(),
+        type: 'lowpass',
+        connect(target: unknown) { return target },
+      }
+      created.push(node)
+      return node
+    }
+    const ctx = {
+      currentTime: 0,
+      sampleRate: 44100,
+      createGain: () => makeNode('gain'),
+    } as unknown as BaseAudioContext
+
+    const mix = createMixGraph(ctx, {} as AudioNode)
+    const master = created[0]
+    const duckBus = created[1]
+
+    mix.setMasterVolume?.(0.5)
+    expect(master?.gain.values.at(-1)?.value).toBeCloseTo(0.45, 3)
+
+    mix.setMuted(true)
+    expect(master?.gain.values.at(-1)?.value).toBe(0)
+
+    mix.setMuted(false)
+    expect(master?.gain.values.at(-1)?.value).toBeCloseTo(0.45, 3)
+
+    mix.setSidechainStrength?.('off')
+    const beforeOff = duckBus?.gain.values.length ?? 0
+    mix.triggerSidechain?.(2.0, 127)
+    expect(duckBus?.gain.values).toHaveLength(beforeOff)
+
+    mix.setSidechainStrength?.('strong')
+    mix.triggerSidechain?.(3.0, 127)
+    const strongDip = duckBus?.gain.values.find((v) => v.method === 'linear' && v.time === 3.008)
+    const strongRecover = duckBus?.gain.values.find((v) => v.method === 'exp' && v.time === 3.22)
+    expect(strongDip?.value).toBeCloseTo(0.28, 2)
+    expect(strongRecover?.value).toBe(1)
+  })
 })

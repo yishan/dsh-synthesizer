@@ -205,11 +205,15 @@ export function PianoRoll({ track, bars, playing }: { track: Track; bars: number
     }
     if (drums) {
       store.toggleNote(track.id, pitch, beat)
-      engine.previewDown(track.instrumentId, pitch, track.synth)
-      setTimeout(() => { engine.previewUp(pitch) }, 120)
+      if (state.auditionOnDraw) {
+        engine.previewDown(track.instrumentId, pitch, track.synth)
+        setTimeout(() => { engine.previewUp(pitch) }, 120)
+      }
       return
     }
-    engine.previewDown(track.instrumentId, pitch, track.synth)
+    if (state.auditionOnDraw) {
+      engine.previewDown(track.instrumentId, pitch, track.synth)
+    }
     setDrag({ mode: 'draw', pitch, startStep: step, currentStep: step })
   }
 

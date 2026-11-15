@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { isTrackAudible, MAX_BARS, MAX_SWING, MAX_TRACKS } from '../model.ts'
+import { VERSION } from '../version.ts'
 import { auditionBase, auditionPitch } from './audition.ts'
 import { getEngine } from './engine.ts'
 import { Icon } from './icons.tsx'
@@ -8,6 +9,7 @@ import { connectMidiInput } from './midi-input.ts'
 import { PianoRoll } from './PianoRoll.tsx'
 import { Popover } from './Popover.tsx'
 import { ProjectPanel } from './ProjectPanel.tsx'
+import type { SidechainStrength } from './local-state.ts'
 import { getProjectStore } from './project-store.ts'
 import { useSidebarWide } from './sidebar-state.ts'
 import { ensureStyles, rangeFill, trackColor } from './styles.ts'
@@ -46,6 +48,7 @@ export function Editor(): JSX.Element {
   const store = getProjectStore()
   const engine = getEngine()
   const sidebarWide = useSidebarWide()
+  const [settingsOpen, setSettingsOpen] = useState(false)
   useEffect(() => {
     ensureStyles()
     void store.hydrate()
@@ -61,8 +64,11 @@ export function Editor(): JSX.Element {
       stopPolling()
       window.removeEventListener('focus', onFocusOrVisible)
       document.removeEventListener('visibilitychange', onFocusOrVisible)
+      if (!store.getState().backgroundPlayback && store.getState().playing) {
+        engine.togglePlay()
+      }
     }
-  }, [store])
+  }, [engine, store])
   useEffect(() => {
     const heldKeys = new Map<string, number>()
     const isTextField = (target: EventTarget | null): boolean => {
@@ -91,6 +97,16 @@ export function Editor(): JSX.Element {
         engine.togglePlay()
         return
       }
+      if (event.code.startsWith('Digit')) {
+        const idx = Number(event.code.slice(5)) - 1
+        const targetTrack = current.project.tracks[idx]
+        if (idx >= 0 && idx < 8 && targetTrack !== undefined) {
+          event.preventDefault()
+          store.selectTrack(targetTrack.id)
+          return
+        }
+      }
+      if (!current.qwertyPianoEnabled) return
       if (event.code === 'KeyZ') {
         event.preventDefault()
         store.setOctaveOffset(current.octaveOffset - 1)
@@ -105,15 +121,6 @@ export function Editor(): JSX.Element {
         event.preventDefault()
         store.setRecordArm(!current.recordArm)
         return
-      }
-      if (event.code.startsWith('Digit')) {
-        const idx = Number(event.code.slice(5)) - 1
-        const targetTrack = current.project.tracks[idx]
-        if (idx >= 0 && idx < 8 && targetTrack !== undefined) {
-          event.preventDefault()
-          store.selectTrack(targetTrack.id)
-          return
-        }
       }
       if (track === undefined) return
       const pitch = auditionPitch(event.code, auditionBase(track.instrumentId, current.octaveOffset))
@@ -303,8 +310,45 @@ export function Editor(): JSX.Element {
               </div>
             )}
           </Popover>
+          <Popover
+            label="设置"
+            trigger={<Icon name="settings" />}
+            icon
+            menuClassName="is-panel"
+            open={settingsOpen}
+            onOpenChange={setSettingsOpen}
+          >
+            {() => <SettingsPanel state={state} />}
+          </Popover>
         </div>
       </header>
+
+      {state.showSidebarTip ? (
+        <div role="status" className="dsyn-tip">
+          <span>
+            首次进入提示：默认已在左侧边栏底部开启「快捷播放控制」，返回对话时也可随时暂停或静音；你可在右上角「设置」中随时开启或关闭此项。
+          </span>
+          <div className="dsyn-group" style={{ flexShrink: 0 }}>
+            <button
+              type="button"
+              className="dsyn-btn is-small is-primary"
+              onClick={() => {
+                store.dismissSidebarTip()
+                setSettingsOpen(true)
+              }}
+            >
+              打开设置
+            </button>
+            <button
+              type="button"
+              className="dsyn-btn is-small is-quiet"
+              onClick={() => { store.dismissSidebarTip() }}
+            >
+              知道了
+            </button>
+          </div>
+        </div>
+      ) : null}
 
       {state.error !== null ? (
         <div role="alert" className="dsyn-alert">
@@ -533,6 +577,181 @@ function NumberField({
       className="dsyn-field is-number"
       style={{ width }}
     />
+  )
+}
+
+const SIDECHAIN_OPTIONS: ReadonlyArray<{ id: SidechainStrength; label: string }> = [
+  { id: 'off', label: '关闭' },
+  { id: 'normal', label: '标准' },
+  { id: 'strong', label: '强烈' },
+]
+
+function SettingSwitchRow({
+  name,
+  description,
+  checked,
+  onToggle,
+}: {
+  name: string
+  description: string
+  checked: boolean
+  onToggle: () => void
+}): JSX.Element {
+  return (
+    <div className="dsyn-setting-row">
+      <div className="dsyn-setting-copy">
+        <div className="dsyn-setting-name">{name}</div>
+        <div className="dsyn-caption">{description}</div>
+      </div>
+      <button
+        type="button"
+        role="switch"
+        aria-checked={checked}
+        aria-label={name}
+        onClick={onToggle}
+        className={`dsyn-switch${checked ? ' is-on' : ''}`}
+      >
+        <span className="dsyn-switch-thumb" />
+      </button>
+    </div>
+  )
+}
+
+function SettingsPanel({ state }: { state: ReturnType<typeof useProject> }): JSX.Element {
+  const store = getProjectStore()
+  const volumePercent = Math.round(state.masterVolume * 100)
+
+  return (
+    <div className="dsyn-settings">
+      <div className="dsyn-settings-title">播放与音频总控</div>
+      <SettingSwitchRow
+        name="在侧栏展示快捷控制"
+        description="离开合成器页面后，在左侧边栏底部展示播放、停止、进度与静音快捷控制（默认开启）"
+        checked={state.showSidebarTransport}
+        onToggle={() => { store.setShowSidebarTransport(!state.showSidebarTransport) }}
+      />
+      <SettingSwitchRow
+        name="离开页面保持后台播放"
+        description="切换到其他页面后继续循环播放，关闭则在离开编辑器时自动暂停"
+        checked={state.backgroundPlayback}
+        onToggle={() => { store.setBackgroundPlayback(!state.backgroundPlayback) }}
+      />
+      <div className="dsyn-setting-row is-stack">
+        <div className="dsyn-setting-head">
+          <span className="dsyn-setting-name">全局主音量</span>
+          <output className="dsyn-setting-val">{volumePercent}%</output>
+        </div>
+        <input
+          aria-label="全局主音量"
+          type="range"
+          min={0}
+          max={1}
+          step={0.01}
+          value={state.masterVolume}
+          onChange={(event) => { store.setMasterVolume(Number(event.target.value)) }}
+          className="dsyn-range"
+          style={rangeFill(state.masterVolume, 0, 1)}
+        />
+      </div>
+      <div className="dsyn-setting-row is-stack">
+        <div className="dsyn-setting-head">
+          <span className="dsyn-setting-name">底鼓侧链闪避 (Sidechain)</span>
+          <div className="dsyn-seg" role="tablist" aria-label="底鼓侧链闪避">
+            {SIDECHAIN_OPTIONS.map((option) => (
+              <button
+                key={option.id}
+                type="button"
+                role="tab"
+                aria-selected={state.sidechainStrength === option.id}
+                onClick={() => { store.setSidechainStrength(option.id) }}
+                style={{ height: 22, padding: '0 8px', fontSize: 11 }}
+              >
+                {option.label}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div className="dsyn-caption">底鼓触发时自动压低旋律音轨音量，营造泵感节奏</div>
+      </div>
+
+      <div className="dsyn-menu-rule" />
+      <div className="dsyn-settings-title">编曲与交互偏好</div>
+      <SettingSwitchRow
+        name="点击网格画音符时试听发声"
+        description="在钢琴卷帘或鼓机网格落笔添加音符时即时发声预览"
+        checked={state.auditionOnDraw}
+        onToggle={() => { store.setAuditionOnDraw(!state.auditionOnDraw) }}
+      />
+      <SettingSwitchRow
+        name="电脑键盘弹奏 (A–P / Z X / R)"
+        description="允许直接用键盘字母区试奏音色并切换八度/录制；空格与数字切轨保持可用"
+        checked={state.qwertyPianoEnabled}
+        onToggle={() => { store.setQwertyPianoEnabled(!state.qwertyPianoEnabled) }}
+      />
+      <SettingSwitchRow
+        name="默认淡显其他音轨音符"
+        description="打开工程时默认在背景叠加显示其他未静音旋律轨的鬼影音符"
+        checked={state.showGhostNotes}
+        onToggle={() => { store.setShowGhostNotes(!state.showGhostNotes) }}
+      />
+      <SettingSwitchRow
+        name="实时示波器动画"
+        description="在音色面板显示实时波形动画，关闭可减少浏览器重绘开销"
+        checked={state.showOscilloscope}
+        onToggle={() => { store.setShowOscilloscope(!state.showOscilloscope) }}
+      />
+
+      <div className="dsyn-menu-rule" />
+      <div className="dsyn-settings-title">外设与默认设置</div>
+      <div className="dsyn-setting-row is-stack">
+        <div className="dsyn-setting-head">
+          <span className="dsyn-setting-name">USB MIDI 外设</span>
+          <span className="dsyn-setting-badge">
+            {state.midiDevices.length > 0 ? `${state.midiDevices.length} 台已连接` : '未连接'}
+          </span>
+        </div>
+        <div className="dsyn-caption">
+          {state.midiDevices.length > 0
+            ? state.midiDevices.join('、')
+            : '未检测到外接 MIDI 设备，接入后即可直接演奏'}
+        </div>
+      </div>
+      <div className="dsyn-setting-actions">
+        <button
+          type="button"
+          className="dsyn-btn is-small"
+          onClick={() => { store.resetSettings() }}
+        >
+          恢复默认设置
+        </button>
+      </div>
+
+      <div className="dsyn-menu-rule" />
+      <div className="dsyn-settings-title">关于与版权信息</div>
+      <div className="dsyn-about">
+        <div className="dsyn-about-head">
+          <strong>DSH Synthesizer · 合成器工作台</strong>
+          <span className="dsyn-version">v{VERSION}</span>
+        </div>
+        <p className="dsyn-caption" style={{ margin: 0 }}>
+          基于 Web Audio API 的多轨合成器与鼓机工作台，支持调式和弦编曲、实时滤波器调制、侧链闪避与 WAV / MIDI 导出。
+        </p>
+        <dl className="dsyn-about-meta">
+          <dt>开源协议</dt><dd>MIT License</dd>
+          <dt>版权所有</dt><dd>© 2026 Yishan. All rights reserved.</dd>
+          <dt>项目仓库</dt>
+          <dd>
+            <a
+              href="https://github.com/yishan/dsh-synthesizer"
+              target="_blank"
+              rel="noreferrer"
+            >
+              github.com/yishan/dsh-synthesizer
+            </a>
+          </dd>
+        </dl>
+      </div>
+    </div>
   )
 }
 

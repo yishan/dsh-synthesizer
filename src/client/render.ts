@@ -3,6 +3,7 @@
  * events through the same mixer as live playback, into an OfflineAudioContext.
  */
 import type { Project } from '../model.ts'
+import { loadSettings } from './local-state.ts'
 import { createMixGraph } from './mix.ts'
 import { advanceScheduler, playEvents, schedulerSignature } from './scheduler.ts'
 
@@ -73,8 +74,11 @@ export async function renderProject(project: Project): Promise<AudioBuffer> {
   const once: Project = { ...project, loop: false }
   const loopSeconds = once.bars * once.beatsPerBar * (60 / once.bpm)
   const ctx = new Offline(2, Math.ceil((loopSeconds + TAIL_SECONDS) * SAMPLE_RATE), SAMPLE_RATE)
+  const settings = loadSettings()
   const mix = createMixGraph(ctx, ctx.destination)
   mix.setTempo(once.bpm)
+  mix.setMasterVolume?.(settings.masterVolume)
+  mix.setSidechainStrength?.(settings.sidechainStrength)
   const step = advanceScheduler(
     { origin: 0, scheduledUntilBeat: 0, signature: schedulerSignature(once) },
     0,

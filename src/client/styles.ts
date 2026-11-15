@@ -194,6 +194,48 @@ const CSS = `
   border: 1px solid color-mix(in srgb, var(--s-danger) 40%, transparent);
   background: color-mix(in srgb, var(--s-danger) 8%, transparent);
 }
+.dsyn-tip {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;
+  margin: 8px 12px 0; padding: 7px 10px; border-radius: 8px; font-size: 12px; color: var(--s-fg);
+  border: 1px solid var(--s-line); background: var(--s-hover);
+}
+.dsyn-settings {
+  width: 100%; max-height: min(78vh, 560px); overflow-y: auto; padding: 8px 10px 10px;
+  display: flex; flex-direction: column; gap: 10px; font-size: 12px;
+}
+.dsyn-settings-title { font-size: 11px; font-weight: 600; color: var(--s-fg3); }
+.dsyn-setting-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.dsyn-setting-row.is-stack { flex-direction: column; align-items: stretch; gap: 5px; }
+.dsyn-setting-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 20px; }
+.dsyn-setting-copy { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.dsyn-setting-name { font-size: 12px; font-weight: 500; color: var(--s-fg); }
+.dsyn-setting-val { font: 500 11px/1 var(--s-mono); font-variant-numeric: tabular-nums; color: var(--s-fg2); }
+.dsyn-setting-badge {
+  font-size: 11px; color: var(--s-fg2); padding: 2px 6px; border-radius: 5px; background: var(--s-hover);
+}
+.dsyn-setting-actions { display: flex; justify-content: flex-start; }
+.dsyn-switch {
+  position: relative; flex: none; width: 34px; height: 20px; padding: 2px; margin-top: 2px;
+  border: 1px solid var(--s-line-strong); border-radius: 999px; background: var(--s-hover); cursor: pointer;
+  transition: background-color 140ms ease-out, border-color 140ms ease-out;
+}
+.dsyn-switch.is-on { background: var(--s-accent); border-color: var(--s-accent); }
+.dsyn-switch-thumb {
+  display: block; width: 14px; height: 14px; border-radius: 50%; background: var(--s-bg);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25); transition: transform 140ms ease-out;
+}
+.dsyn-switch.is-on .dsyn-switch-thumb { transform: translateX(14px); background: var(--s-accent-fg); }
+.dsyn-about { display: flex; flex-direction: column; gap: 8px; }
+.dsyn-about-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.dsyn-version {
+  font: 500 11px/1 var(--s-mono); padding: 3px 6px; border-radius: 5px;
+  background: var(--s-hover); color: var(--s-fg2);
+}
+.dsyn-about-meta { display: grid; grid-template-columns: auto 1fr; gap: 4px 10px; margin: 0; font-size: 11px; color: var(--s-fg2); }
+.dsyn-about-meta dt { color: var(--s-fg3); white-space: nowrap; }
+.dsyn-about-meta dd { margin: 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.dsyn-about-meta a { color: var(--s-fg); text-decoration: none; border-bottom: 1px solid var(--s-line-strong); }
+.dsyn-about-meta a:hover { border-bottom-color: var(--s-fg); }
 
 /* Track list */
 .dsyn-track {

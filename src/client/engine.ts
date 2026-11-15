@@ -269,6 +269,7 @@ export class Engine {
   private syncLiveVoices(): void {
     const audio = this.audio
     if (audio === undefined) return
+    this.applyMute()
     const now = audio.currentTime
     const state = this.store.getState()
     const { project } = state
@@ -310,7 +311,10 @@ export class Engine {
   }
 
   private applyMute(): void {
-    this.mix?.setMuted(this.store.getState().muted)
+    const state = this.store.getState()
+    this.mix?.setMuted(state.muted)
+    this.mix?.setMasterVolume?.(state.masterVolume)
+    this.mix?.setSidechainStrength?.(state.sidechainStrength)
   }
 
   private outputFor(event: ScheduleEvent): GainNode {

@@ -18,6 +18,12 @@ const PATHS = {
   download: <path d="M8 2.500v8M4.800 7.500L8 10.700l3.200-3.200M3 13.500h10" />,
   upload: <path d="M8 10.500v-8M4.800 5.700L8 2.500l3.200 3.200M3 13.500h10" />,
   speaker: <path d="M2.5 6.2h2.2L8 3.5v9L4.7 9.8H2.5V6.2zM10.6 6.2a2.6 2.6 0 010 3.6" />,
+  settings: (
+    <>
+      <circle cx="8" cy="8" r="2.2" />
+      <path d="M8 2.2v1.6M8 12.2v1.6M2.2 8h1.6M12.2 8h1.6M3.9 3.9l1.1 1.1M11 11l1.1 1.1M12.1 3.9L11 5M5 11l-1.1 1.1" />
+    </>
+  ),
 } as const
 
 export type IconName = keyof typeof PATHS

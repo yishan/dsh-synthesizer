@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { getEngine } from './engine.ts'
+import { t, useLocale } from './i18n.ts'
 import { Icon } from './icons.tsx'
 import { setSidebarWide } from './sidebar-state.ts'
 import { ensureStyles } from './styles.ts'
@@ -20,6 +21,7 @@ export function Transport({
   variant?: 'page' | 'sidebar'
   wide?: boolean
 }): JSX.Element | null {
+  useLocale()
   const state = useProject()
   const engine = getEngine()
   const [beatLabel, setBeatLabel] = useState('1.1')
@@ -40,15 +42,15 @@ export function Transport({
     return () => { if (raf !== 0) cancelAnimationFrame(raf) }
   }, [engine, state.playing, state.project.bpm, state.project.bars])
 
-  const playLabel = state.playing ? '暂停' : '播放'
-  const muteLabel = state.muted ? '取消静音' : '静音'
+  const playLabel = state.playing ? t('transport.pause') : t('transport.play')
+  const muteLabel = state.muted ? t('transport.unmute') : t('transport.mute')
   const quiet = page ? '' : ' is-quiet'
 
   const play = (
     <button
       type="button"
       aria-label={playLabel}
-      title={page ? `${playLabel}（空格）` : `合成器：${playLabel}`}
+      title={page ? t('transport.playShortcut', { label: playLabel }) : t('transport.sidebarPlay', { label: playLabel })}
       data-play={state.playing ? 'playing' : 'stopped'}
       onClick={() => { engine.togglePlay() }}
       className={`dsyn-btn is-icon${page ? ' is-primary' : ' is-quiet'}`}
@@ -59,8 +61,8 @@ export function Transport({
   const stop = (
     <button
       type="button"
-      aria-label="停止并回到开头"
-      title="停止并回到第一拍"
+      aria-label={t('transport.stopAria')}
+      title={t('transport.stopTitle')}
       onClick={() => { engine.stopAndRewind() }}
       className={`dsyn-btn is-icon${quiet}`}
     >
@@ -82,8 +84,8 @@ export function Transport({
   )
   const position = (
     <span
-      aria-label="播放位置"
-      title="播放位置：小节.拍"
+      aria-label={t('transport.positionAria')}
+      title={t('transport.positionTitle')}
       className={`dsyn-readout${state.playing ? ' is-live' : ''}`}
     >
       {beatLabel}
@@ -111,7 +113,7 @@ export function Transport({
     <div
       data-transport="dsh-synthesizer"
       role="group"
-      aria-label="合成器播放控制"
+      aria-label={t('transport.groupAria')}
       className={`dsyn dsyn-side${state.playing ? ' is-playing' : ''}`}
     >
       {play}

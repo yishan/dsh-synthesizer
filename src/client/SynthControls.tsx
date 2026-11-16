@@ -1,18 +1,28 @@
 import { useEffect, useRef, useState } from 'react'
 import { DRUM_PITCHES, type SynthPatch, type SynthWaveform, type Track } from '../model.ts'
 import { getEngine } from './engine.ts'
-import { DEFAULT_DRUM_KIT, DRUM_KITS, DRUM_LABELS, INSTRUMENT_LABELS, resolveSynthPatch } from './instruments.ts'
-import { isPreset, presetsFor } from './presets.ts'
+import { t, useLocale, type MessageKey } from './i18n.ts'
+import {
+  DEFAULT_DRUM_KIT,
+  DRUM_KITS,
+  DRUM_LABELS,
+  drumKitDescription,
+  drumKitLabel,
+  drumPieceLabel,
+  instrumentLabel,
+  resolveSynthPatch,
+} from './instruments.ts'
+import { isPreset, presetDescription, presetLabel, presetsFor } from './presets.ts'
 import { Icon } from './icons.tsx'
 import { getProjectStore } from './project-store.ts'
 import { rangeFill } from './styles.ts'
 import { useProject } from './use-project.ts'
 
-const WAVEFORMS: ReadonlyArray<{ id: SynthWaveform; label: string }> = [
-  { id: 'sawtooth', label: '锯齿' },
-  { id: 'square', label: '方波' },
-  { id: 'triangle', label: '三角' },
-  { id: 'sine', label: '正弦' },
+const WAVEFORMS: ReadonlyArray<{ id: SynthWaveform; labelKey: MessageKey }> = [
+  { id: 'sawtooth', labelKey: 'synth.wave.sawtooth' },
+  { id: 'square', labelKey: 'synth.wave.square' },
+  { id: 'triangle', labelKey: 'synth.wave.triangle' },
+  { id: 'sine', labelKey: 'synth.wave.sine' },
 ]
 
 const DRUM_KEY_HINTS: Record<number, string> = {
@@ -26,12 +36,12 @@ const DRUM_KEY_HINTS: Record<number, string> = {
   49: 'O',
 }
 
-const LFO_CHOICES = [
-  { id: 'off', label: '关', hint: '不使用 LFO' },
-  { id: 'pitch', label: '音高', hint: '颤音' },
-  { id: 'filter', label: '滤波', hint: '明暗来回扫动' },
-  { id: 'amp', label: '音量', hint: '震音' },
-] as const
+const LFO_CHOICES: ReadonlyArray<{ id: 'off' | 'pitch' | 'filter' | 'amp'; labelKey: MessageKey; hintKey: MessageKey }> = [
+  { id: 'off', labelKey: 'synth.lfo.off', hintKey: 'synth.lfo.offHint' },
+  { id: 'pitch', labelKey: 'synth.lfo.pitch', hintKey: 'synth.lfo.pitchHint' },
+  { id: 'filter', labelKey: 'synth.lfo.filter', hintKey: 'synth.lfo.filterHint' },
+  { id: 'amp', labelKey: 'synth.lfo.amp', hintKey: 'synth.lfo.ampHint' },
+]
 
 const MELODIC_INSTRUMENTS = ['lead', 'bass', 'pad', 'keys', 'acid', 'pluck', 'chip', 'bell'] as const
 
@@ -48,6 +58,7 @@ function brightnessToCutoff(brightness: number): number {
 
 /** Sound tab of the editor drawer: drum pads for a drum track, patch controls otherwise. */
 export function SynthControls({ track, playing }: { track: Track; playing: boolean }): JSX.Element {
+  useLocale()
   const store = getProjectStore()
   const state = useProject()
   const engine = getEngine()
@@ -60,13 +71,13 @@ export function SynthControls({ track, playing }: { track: Track; playing: boole
     return (
       <>
         <div className="dsyn-spread">
-          <div className="dsyn-line" role="group" aria-label="鼓组">
-            <span className="dsyn-label">鼓组</span>
+          <div className="dsyn-line" role="group" aria-label={t('synth.drumKit')}>
+            <span className="dsyn-label">{t('synth.drumKit')}</span>
             {DRUM_KITS.map((kit) => (
               <button
                 key={kit.id}
                 type="button"
-                title={kit.description}
+                title={drumKitDescription(kit)}
                 aria-pressed={activeKit === kit.id}
                 onClick={() => {
                   store.setTrackKit(track.id, kit.id)
@@ -78,28 +89,29 @@ export function SynthControls({ track, playing }: { track: Track; playing: boole
                 }}
                 className="dsyn-btn"
               >
-                {kit.label}
+                {drumKitLabel(kit)}
               </button>
             ))}
           </div>
           {state.showOscilloscope ? <Oscilloscope patch={patch} playing={playing} isDrums /> : null}
         </div>
-        <div className="dsyn-line" aria-label="鼓组试听">
-          <span className="dsyn-label">试听</span>
+        <div className="dsyn-line" aria-label={t('synth.auditionDrumGroup')}>
+          <span className="dsyn-label">{t('synth.audition')}</span>
           {[...DRUM_PITCHES].reverse().map((pitch) => {
             const info = DRUM_LABELS[pitch]
             if (info === undefined) return null
+            const pieceName = drumPieceLabel(pitch)
             return (
               <button
                 key={pitch}
                 type="button"
-                title={`试听${info.name}`}
+                title={t('synth.auditionItem', { name: pieceName })}
                 onMouseDown={() => { engine.previewDown('drums', pitch) }}
                 onMouseUp={() => { engine.previewUp(pitch) }}
                 onMouseLeave={() => { engine.previewUp(pitch) }}
                 className="dsyn-btn"
               >
-                {info.name.split(' ')[0]}
+                {pieceName.split(' ')[0]}
                 <kbd>{DRUM_KEY_HINTS[pitch] ?? ''}</kbd>
               </button>
             )
@@ -127,8 +139,8 @@ export function SynthControls({ track, playing }: { track: Track; playing: boole
   return (
     <>
       <div className="dsyn-spread">
-        <div className="dsyn-line" role="group" aria-label="乐器">
-          <span className="dsyn-label">乐器</span>
+        <div className="dsyn-line" role="group" aria-label={t('synth.instrument')}>
+          <span className="dsyn-label">{t('synth.instrument')}</span>
           <div className="dsyn-seg" role="tablist">
             {MELODIC_INSTRUMENTS.map((id) => (
               <button
@@ -144,7 +156,7 @@ export function SynthControls({ track, playing }: { track: Track; playing: boole
                   setTimeout(() => { engine.previewUp(base) }, 200)
                 }}
               >
-                {(INSTRUMENT_LABELS[id] ?? id).split(' ')[0]}
+                {instrumentLabel(id).split(' ')[0]}
               </button>
             ))}
           </div>
@@ -152,51 +164,54 @@ export function SynthControls({ track, playing }: { track: Track; playing: boole
         <div className="dsyn-line">
           <button
             type="button"
-            title="按住试听当前音色"
+            title={t('synth.auditionHoldTitle')}
             onMouseDown={() => { engine.previewDown(track.instrumentId, auditionPitch, patch) }}
             onMouseUp={() => { engine.previewUp(auditionPitch) }}
             onMouseLeave={() => { engine.previewUp(auditionPitch) }}
             className="dsyn-btn"
           >
             <Icon name="speaker" />
-            试听
+            {t('synth.audition')}
           </button>
           {state.showOscilloscope ? <Oscilloscope patch={patch} playing={playing} isDrums={false} /> : null}
         </div>
       </div>
 
-      <div className="dsyn-line" role="group" aria-label="音色预设">
-        <span className="dsyn-label">音色</span>
-        {presets.map((preset) => (
-          <button
-            key={preset.id}
-            type="button"
-            title={preset.description}
-            aria-pressed={isPreset(patch, preset)}
-            onClick={() => {
-              store.applySynthPreset(track.id, preset)
-              engine.previewDown(preset.instrumentId, auditionPitch, preset.patch)
-              setTimeout(() => { engine.previewUp(auditionPitch) }, 200)
-            }}
-            className="dsyn-btn"
-          >
-            {/* The original eight carry an English suffix ("超级锯齿 Lead"); the rest are already short. */}
-            {preset.badge !== undefined ? preset.label.split(' ')[0] : preset.label}
-          </button>
-        ))}
+      <div className="dsyn-line" role="group" aria-label={t('synth.presetGroup')}>
+        <span className="dsyn-label">{t('synth.preset')}</span>
+        {presets.map((preset) => {
+          const label = presetLabel(preset)
+          return (
+            <button
+              key={preset.id}
+              type="button"
+              title={presetDescription(preset)}
+              aria-pressed={isPreset(patch, preset)}
+              onClick={() => {
+                store.applySynthPreset(track.id, preset)
+                engine.previewDown(preset.instrumentId, auditionPitch, preset.patch)
+                setTimeout(() => { engine.previewUp(auditionPitch) }, 200)
+              }}
+              className="dsyn-btn"
+            >
+              {/* The original eight carry a suffix ("超级锯齿 Lead"); the rest are already short. */}
+              {preset.badge !== undefined ? label.split(' ')[0] : label}
+            </button>
+          )
+        })}
         <span
           className="dsyn-caption"
           aria-hidden={matchedPreset}
           style={{ visibility: matchedPreset ? 'hidden' : 'visible', whiteSpace: 'nowrap' }}
         >
-          已调整
+          {t('synth.modified')}
         </span>
       </div>
 
       <div className="dsyn-macros">
-        <Param macro label="明亮度" hint="闷 ↔ 清脆" value={brightness} min={0} max={100} step={1} unit="%"
+        <Param macro label={t('synth.brightness')} hint={t('synth.brightnessHint')} value={brightness} min={0} max={100} step={1} unit="%"
           onChange={(v) => { setPatch({ cutoff: brightnessToCutoff(v) }) }} />
-        <Param macro label="咬字" hint="柔顺 ↔ 酸" value={character} min={0} max={100} step={1} unit="%"
+        <Param macro label={t('synth.character')} hint={t('synth.characterHint')} value={character} min={0} max={100} step={1} unit="%"
           onChange={(v) => {
             const norm = v / 100
             setPatch({
@@ -204,7 +219,7 @@ export function SynthControls({ track, playing }: { track: Track; playing: boole
               envMod: Number(Math.min(1, 0.1 + norm * 0.85).toFixed(2)),
             })
           }} />
-        <Param macro label="厚度" hint="单薄 ↔ 宽厚" value={richness} min={0} max={100} step={1} unit="%"
+        <Param macro label={t('synth.richness')} hint={t('synth.richnessHint')} value={richness} min={0} max={100} step={1} unit="%"
           onChange={(v) => {
             const norm = v / 100
             setPatch({
@@ -213,7 +228,7 @@ export function SynthControls({ track, playing }: { track: Track; playing: boole
               drive: Number((norm * 0.4).toFixed(2)),
             })
           }} />
-        <Param macro label="空间" hint="干 ↔ 回响" value={space} min={0} max={100} step={1} unit="%"
+        <Param macro label={t('synth.space')} hint={t('synth.spaceHint')} value={space} min={0} max={100} step={1} unit="%"
           onChange={(v) => {
             const norm = v / 100
             setPatch({
@@ -232,7 +247,7 @@ export function SynthControls({ track, playing }: { track: Track; playing: boole
           style={{ marginLeft: -6 }}
         >
           <Icon name={showAdvanced ? 'chevronUp' : 'chevronDown'} size={12} />
-          全部参数
+          {t('synth.allParams')}
         </button>
       </div>
 
@@ -240,8 +255,8 @@ export function SynthControls({ track, playing }: { track: Track; playing: boole
         <div className="dsyn-advanced">
           <div className="dsyn-module">
             <div className="dsyn-module-title">
-              <span>振荡器</span>
-              <div className="dsyn-seg" role="tablist" aria-label="波形">
+              <span>{t('synth.osc')}</span>
+              <div className="dsyn-seg" role="tablist" aria-label={t('synth.waveform')}>
                 {WAVEFORMS.map((wf) => (
                   <button
                     key={wf.id}
@@ -251,39 +266,39 @@ export function SynthControls({ track, playing }: { track: Track; playing: boole
                     onClick={() => { setPatch({ waveform: wf.id }) }}
                     style={{ height: 20, padding: '0 8px', fontSize: 11 }}
                   >
-                    {wf.label}
+                    {t(wf.labelKey)}
                   </button>
                 ))}
               </div>
             </div>
-            <Param label="失谐" value={Math.round(patch.detune)} min={0} max={50} step={1} unit=" ct" onChange={(v) => { setPatch({ detune: v }) }} />
-            <Param label="低八度" value={Math.round(patch.subMix * 100)} min={0} max={100} step={1} unit="%" onChange={(v) => { setPatch({ subMix: v / 100 }) }} />
-            <Param label="过载" value={Math.round(patch.drive * 100)} min={0} max={100} step={1} unit="%" onChange={(v) => { setPatch({ drive: v / 100 }) }} />
+            <Param label={t('synth.detune')} value={Math.round(patch.detune)} min={0} max={50} step={1} unit=" ct" onChange={(v) => { setPatch({ detune: v }) }} />
+            <Param label={t('synth.subMix')} value={Math.round(patch.subMix * 100)} min={0} max={100} step={1} unit="%" onChange={(v) => { setPatch({ subMix: v / 100 }) }} />
+            <Param label={t('synth.drive')} value={Math.round(patch.drive * 100)} min={0} max={100} step={1} unit="%" onChange={(v) => { setPatch({ drive: v / 100 }) }} />
           </div>
           <div className="dsyn-module">
-            <div className="dsyn-module-title"><span>滤波器</span></div>
-            <Param label="截止频率" value={Math.round(patch.cutoff)} min={80} max={12000} step={20} unit=" Hz" onChange={(v) => { setPatch({ cutoff: v }) }} />
-            <Param label="共鸣" value={Number(patch.resonance.toFixed(1))} min={0.5} max={18} step={0.5} unit="" onChange={(v) => { setPatch({ resonance: v }) }} />
-            <Param label="包络扫频" value={Math.round(patch.envMod * 100)} min={0} max={100} step={1} unit="%" onChange={(v) => { setPatch({ envMod: v / 100 }) }} />
+            <div className="dsyn-module-title"><span>{t('synth.filter')}</span></div>
+            <Param label={t('synth.cutoff')} value={Math.round(patch.cutoff)} min={80} max={12000} step={20} unit=" Hz" onChange={(v) => { setPatch({ cutoff: v }) }} />
+            <Param label={t('synth.resonance')} value={Number(patch.resonance.toFixed(1))} min={0.5} max={18} step={0.5} unit="" onChange={(v) => { setPatch({ resonance: v }) }} />
+            <Param label={t('synth.envMod')} value={Math.round(patch.envMod * 100)} min={0} max={100} step={1} unit="%" onChange={(v) => { setPatch({ envMod: v / 100 }) }} />
           </div>
           <div className="dsyn-module">
-            <div className="dsyn-module-title"><span>包络</span></div>
-            <Param label="起音" value={Number(patch.attack.toFixed(2))} min={0.005} max={0.8} step={0.01} unit=" s" onChange={(v) => { setPatch({ attack: v }) }} />
-            <Param label="衰减" value={Number(patch.decay.toFixed(2))} min={0.02} max={1.2} step={0.02} unit=" s" onChange={(v) => { setPatch({ decay: v }) }} />
-            <Param label="延音" value={Math.round(patch.sustain * 100)} min={0} max={100} step={1} unit="%" onChange={(v) => { setPatch({ sustain: v / 100 }) }} />
-            <Param label="释音" value={Number(patch.release.toFixed(2))} min={0.02} max={1.5} step={0.02} unit=" s" onChange={(v) => { setPatch({ release: v }) }} />
+            <div className="dsyn-module-title"><span>{t('synth.env')}</span></div>
+            <Param label={t('synth.attack')} value={Number(patch.attack.toFixed(2))} min={0.005} max={0.8} step={0.01} unit=" s" onChange={(v) => { setPatch({ attack: v }) }} />
+            <Param label={t('synth.decay')} value={Number(patch.decay.toFixed(2))} min={0.02} max={1.2} step={0.02} unit=" s" onChange={(v) => { setPatch({ decay: v }) }} />
+            <Param label={t('synth.sustain')} value={Math.round(patch.sustain * 100)} min={0} max={100} step={1} unit="%" onChange={(v) => { setPatch({ sustain: v / 100 }) }} />
+            <Param label={t('synth.release')} value={Number(patch.release.toFixed(2))} min={0.02} max={1.5} step={0.02} unit=" s" onChange={(v) => { setPatch({ release: v }) }} />
           </div>
           <div className="dsyn-module">
             <div className="dsyn-module-title">
               <span>LFO</span>
-              <div className="dsyn-seg" role="tablist" aria-label="LFO 作用对象">
+              <div className="dsyn-seg" role="tablist" aria-label={t('synth.lfoTarget')}>
                 {LFO_CHOICES.map((choice) => (
                   <button
                     key={choice.id}
                     type="button"
                     role="tab"
                     aria-selected={lfoTarget === choice.id}
-                    title={choice.hint}
+                    title={t(choice.hintKey)}
                     onClick={() => {
                       setPatch(choice.id === 'off'
                         ? { lfoTarget: undefined, lfoRate: undefined, lfoDepth: undefined }
@@ -291,24 +306,24 @@ export function SynthControls({ track, playing }: { track: Track; playing: boole
                     }}
                     style={{ height: 20, padding: '0 8px', fontSize: 11 }}
                   >
-                    {choice.label}
+                    {t(choice.labelKey)}
                   </button>
                 ))}
               </div>
             </div>
             {lfoTarget === 'off' ? (
-              <span className="dsyn-caption">选择音高、滤波或音量，让它周期性地变化</span>
+              <span className="dsyn-caption">{t('synth.lfoHint')}</span>
             ) : (
               <>
-                <Param label="速率" value={Number((patch.lfoRate ?? 5).toFixed(1))} min={0.1} max={12} step={0.1} unit=" Hz" onChange={(v) => { setPatch({ lfoRate: v }) }} />
-                <Param label="深度" value={Math.round((patch.lfoDepth ?? 0) * 100)} min={1} max={100} step={1} unit="%" onChange={(v) => { setPatch({ lfoDepth: v / 100 }) }} />
+                <Param label={t('synth.lfoRate')} value={Number((patch.lfoRate ?? 5).toFixed(1))} min={0.1} max={12} step={0.1} unit=" Hz" onChange={(v) => { setPatch({ lfoRate: v }) }} />
+                <Param label={t('synth.lfoDepth')} value={Math.round((patch.lfoDepth ?? 0) * 100)} min={1} max={100} step={1} unit="%" onChange={(v) => { setPatch({ lfoDepth: v / 100 }) }} />
               </>
             )}
           </div>
           <div className="dsyn-module">
-            <div className="dsyn-module-title"><span>效果</span></div>
-            <Param label="回声" value={Math.round((patch.delayMix / 0.8) * 100)} min={0} max={100} step={1} unit="%" onChange={(v) => { setPatch({ delayMix: Number(((v / 100) * 0.8).toFixed(2)) }) }} />
-            <Param label="混响" value={Math.round(((patch.reverbMix ?? 0) / 0.8) * 100)} min={0} max={100} step={1} unit="%" onChange={(v) => { setPatch({ reverbMix: Number(((v / 100) * 0.8).toFixed(2)) }) }} />
+            <div className="dsyn-module-title"><span>{t('synth.fx')}</span></div>
+            <Param label={t('synth.delay')} value={Math.round((patch.delayMix / 0.8) * 100)} min={0} max={100} step={1} unit="%" onChange={(v) => { setPatch({ delayMix: Number(((v / 100) * 0.8).toFixed(2)) }) }} />
+            <Param label={t('synth.reverb')} value={Math.round(((patch.reverbMix ?? 0) / 0.8) * 100)} min={0} max={100} step={1} unit="%" onChange={(v) => { setPatch({ reverbMix: Number(((v / 100) * 0.8).toFixed(2)) }) }} />
           </div>
         </div>
       ) : null}
@@ -461,7 +476,7 @@ function Oscilloscope({
       ref={canvasRef}
       width={128}
       height={30}
-      aria-label="示波器"
+      aria-label={t('synth.scopeAria')}
       className="dsyn-scope"
       style={{ width: 128, height: 30 }}
     />

@@ -3,6 +3,7 @@
  * the sidebar transport keeps the same AudioContext.
  */
 import { isTrackAudible, STEP_BEATS, type SynthPatch } from '../model.ts'
+import { t } from './i18n.ts'
 import { resolveSynthPatch, type ScheduledNote } from './instruments.ts'
 import { createMixGraph, type MixGraph } from './mix.ts'
 import { getProjectStore, type ProjectClient } from './project-store.ts'
@@ -60,7 +61,7 @@ export class Engine {
     }
     const audio = this.ensure()
     if (audio === undefined) {
-      this.store.setError('Web Audio 不可用')
+      this.store.setError(t('err.webAudioUnavailable'))
       return
     }
     void audio.resume()
@@ -332,7 +333,7 @@ export class Engine {
   private report(id: string): void {
     if (this.reported.has(id)) return
     this.reported.add(id)
-    this.store.setError(`未知音色 ${id}`)
+    this.store.setError(t('err.unknownInstrument', { id }))
   }
 }
 

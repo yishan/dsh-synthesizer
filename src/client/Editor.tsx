@@ -3,8 +3,17 @@ import { isTrackAudible, MAX_BARS, MAX_SWING, MAX_TRACKS } from '../model.ts'
 import { VERSION } from '../version.ts'
 import { auditionBase, auditionPitch } from './audition.ts'
 import { getEngine } from './engine.ts'
+import {
+  getLocaleSetting,
+  resetLocaleCache,
+  setLocaleSetting,
+  t,
+  useLocale,
+  type LocaleSetting,
+  type MessageKey,
+} from './i18n.ts'
 import { Icon } from './icons.tsx'
-import { INSTRUMENT_LABELS, listInstruments } from './instruments.ts'
+import { instrumentLabel, listInstruments } from './instruments.ts'
 import { connectMidiInput } from './midi-input.ts'
 import { PianoRoll } from './PianoRoll.tsx'
 import { Popover } from './Popover.tsx'
@@ -16,27 +25,27 @@ import { ensureStyles, rangeFill, trackColor } from './styles.ts'
 import { Transport } from './Transport.tsx'
 import { useProject } from './use-project.ts'
 
-const ERRORS: Record<string, string> = {
-  invalid_project: '工程数据格式有误，已自动校正参数范围',
-  invalid_id: '工程编号无效',
-  invalid_json: '工程数据不是有效 JSON',
-  not_found: '找不到该工程',
-  project_too_large: '工程体积超过 256KB 上限',
-  too_many_projects: '最多保存 32 个工程，请先清理旧工程',
-  profile_unavailable: '当前环境暂不支持写入工程文件',
-  load_failed: '读取工程失败，请稍后重试',
-  save_failed: '保存工程失败，请稍后重试',
-  invalid_import: '这个文件不是合成器工程，无法导入',
-  render_unavailable: '当前环境不支持离线渲染音频',
+const ERROR_KEYS: Record<string, MessageKey> = {
+  invalid_project: 'err.invalid_project',
+  invalid_id: 'err.invalid_id',
+  invalid_json: 'err.invalid_json',
+  not_found: 'err.not_found',
+  project_too_large: 'err.project_too_large',
+  too_many_projects: 'err.too_many_projects',
+  profile_unavailable: 'err.profile_unavailable',
+  load_failed: 'err.load_failed',
+  save_failed: 'err.save_failed',
+  invalid_import: 'err.invalid_import',
+  render_unavailable: 'err.render_unavailable',
 }
 
 /** Turn a store error code or a raw fetch failure into a sentence the user can act on. */
 function errorText(code: string): string {
-  const known = ERRORS[code]
-  if (known !== undefined) return known
+  const knownKey = ERROR_KEYS[code]
+  if (knownKey !== undefined) return t(knownKey)
   const status = /^HTTP (\d+)$/.exec(code)?.[1]
-  if (status !== undefined) return `DSH 宿主返回了错误（HTTP ${status}）。请确认合成器插件已在当前 profile 中启用`
-  return `无法连接到 DSH 宿主，请稍后重试（${code}）`
+  if (status !== undefined) return t('err.hostHttp', { status })
+  return t('err.hostUnreachable', { code })
 }
 
 /**
@@ -44,6 +53,7 @@ function errorText(code: string): string {
  * editor for the selected track. Playback continues after this page unmounts.
  */
 export function Editor(): JSX.Element {
+  useLocale()
   const state = useProject()
   const store = getProjectStore()
   const engine = getEngine()
@@ -183,21 +193,21 @@ export function Editor(): JSX.Element {
         {state.loadFailed ? (
           <>
             <div role="alert">
-              <div style={{ fontWeight: 600 }}>没能读取工程</div>
+              <div style={{ fontWeight: 600 }}>{t('editor.loadFailed')}</div>
               <div className="dsyn-caption" style={{ marginTop: 4 }}>{errorText(state.error ?? 'load_failed')}</div>
             </div>
             <button type="button" className="dsyn-btn is-primary" onClick={() => { void store.hydrate() }}>
-              重试
+              {t('editor.retry')}
             </button>
           </>
-        ) : '正在载入合成器…'}
+        ) : t('editor.loading')}
       </div>
     )
   }
 
   const project = state.project
   const selected = project.tracks.find((track) => track.id === state.selectedTrackId) ?? project.tracks[0]
-  if (selected === undefined) return <div className="dsyn dsyn-page" style={{ padding: 16 }}>当前工程没有音轨</div>
+  if (selected === undefined) return <div className="dsyn dsyn-page" style={{ padding: 16 }}>{t('editor.noTracks')}</div>
   const instruments = listInstruments()
   const startPlayback = (): void => {
     if (!store.getState().playing) engine.togglePlay()
@@ -210,17 +220,17 @@ export function Editor(): JSX.Element {
           <Transport variant="page" />
           <span className="dsyn-sep" aria-hidden="true" />
           <label className="dsyn-label">
-            速度
+            {t('editor.bpm')}
             <NumberField ariaLabel="BPM" min={40} max={240} value={project.bpm} width={56} onCommit={(value) => { store.setBpm(value) }} />
           </label>
           <label className="dsyn-label">
-            小节
-            <NumberField ariaLabel="小节数" min={1} max={MAX_BARS} value={project.bars} width={48} onCommit={(value) => { store.setBars(value) }} />
+            {t('editor.bars')}
+            <NumberField ariaLabel={t('editor.barsAria')} min={1} max={MAX_BARS} value={project.bars} width={48} onCommit={(value) => { store.setBars(value) }} />
           </label>
           <button
             type="button"
-            aria-label="小节翻倍"
-            title="将小节数和全部音轨内容翻倍（可撤销）"
+            aria-label={t('editor.doubleBarsAria')}
+            title={t('editor.doubleBarsTitle')}
             disabled={project.bars * 2 > MAX_BARS}
             onClick={() => { store.duplicateBars() }}
             className="dsyn-btn is-small"
@@ -228,10 +238,10 @@ export function Editor(): JSX.Element {
           >
             ×2
           </button>
-          <label className="dsyn-label" title="把每拍里第二、第四个十六分音符往后推。33 是三连音的摇摆感">
-            摇摆
+          <label className="dsyn-label" title={t('editor.swingTitle')}>
+            {t('editor.swing')}
             <NumberField
-              ariaLabel="摇摆"
+              ariaLabel={t('editor.swing')}
               min={0}
               max={Math.round(MAX_SWING * 100)}
               value={Math.round((project.swing ?? 0) * 100)}
@@ -241,9 +251,9 @@ export function Editor(): JSX.Element {
           </label>
           <button
             type="button"
-            aria-label="循环播放"
+            aria-label={t('editor.loopAria')}
             aria-pressed={project.loop}
-            title={project.loop ? '循环播放：开' : '循环播放：关'}
+            title={project.loop ? t('editor.loopOn') : t('editor.loopOff')}
             onClick={() => { store.setLoop(!project.loop) }}
             className="dsyn-btn is-icon"
           >
@@ -256,10 +266,10 @@ export function Editor(): JSX.Element {
             <button
               type="button"
               className="dsyn-btn is-small is-active"
-              title="dsh 会话生成或更新了这首曲目，点击立即加载"
+              title={t('editor.pendingTitle')}
               onClick={() => { void store.acceptPendingToolProject() }}
             >
-              新曲目：{state.pendingToolProject.name} · 打开
+              {t('editor.pendingOpen', { name: state.pendingToolProject.name })}
             </button>
           ) : null}
           {state.saveFailed && !state.saving ? (
@@ -267,16 +277,16 @@ export function Editor(): JSX.Element {
               type="button"
               className="dsyn-btn is-small is-danger"
               aria-pressed="true"
-              title="最近的改动还没有保存到 DSH，点击重试"
+              title={t('editor.unsavedTitle')}
               onClick={() => { void store.flush() }}
             >
-              未保存 · 重试
+              {t('editor.unsavedRetry')}
             </button>
           ) : (
-            <span className="dsyn-status" aria-live="polite">{state.saving ? '保存中…' : '已保存'}</span>
+            <span className="dsyn-status" aria-live="polite">{state.saving ? t('editor.saving') : t('editor.saved')}</span>
           )}
           <Popover
-            label={`工程：${project.name}`}
+            label={t('editor.projectButton', { name: project.name })}
             buttonClassName="dsyn-project-button"
             menuClassName="is-panel"
             trigger={<><span>{project.name}</span><Icon name="chevronDown" size={12} /></>}
@@ -286,32 +296,32 @@ export function Editor(): JSX.Element {
           <span className="dsyn-sep" aria-hidden="true" />
           <button
             type="button"
-            aria-label="撤销"
-            title="撤销上一步编辑（⌘Z / Ctrl+Z）"
+            aria-label={t('editor.undoAria')}
+            title={t('editor.undoTitle')}
             disabled={!state.canUndo}
             onClick={() => { store.undo() }}
             className="dsyn-btn is-icon"
           >
             <Icon name="undo" />
           </button>
-          <Popover label="玩法与快捷键" trigger={<Icon name="help" />} icon>
+          <Popover label={t('editor.helpLabel')} trigger={<Icon name="help" />} icon>
             {() => (
               <div className="dsyn-help">
                 <dl>
-                  <dt>画音符</dt><dd>在格子上点击，或向右拖出长音；再点一次擦除</dd>
-                  <dt>定位</dt><dd>点击顶部小节标尺跳到该位置</dd>
-                  <dt><kbd>空格</kbd></dt><dd>随时播放 / 暂停</dd>
-                  <dt><kbd>A</kbd>–<kbd>P</kbd></dt><dd>随时用电脑键盘弹奏，<kbd>Z</kbd> <kbd>X</kbd> 切换八度，支持 USB MIDI 键盘</dd>
-                  <dt><kbd>1</kbd>–<kbd>8</kbd> / <kbd>R</kbd></dt><dd>快速切换音轨 / 开关「边弹边录」</dd>
-                  <dt><kbd>⌘Z</kbd></dt><dd>撤销上一步</dd>
-                  <dt>工程</dt><dd>点击工程名可切换、复制、导出、导入；改动会自动保存</dd>
-                  <dt>后台播放</dt><dd>回到对话后音乐继续，侧栏底部可暂停和静音</dd>
+                  <dt>{t('editor.helpDrawKey')}</dt><dd>{t('editor.helpDrawDesc')}</dd>
+                  <dt>{t('editor.helpSeekKey')}</dt><dd>{t('editor.helpSeekDesc')}</dd>
+                  <dt><kbd>{t('editor.helpSpaceKey')}</kbd></dt><dd>{t('editor.helpSpaceDesc')}</dd>
+                  <dt><kbd>A</kbd>–<kbd>P</kbd></dt><dd>{t('editor.helpKeysDesc', { z: 'Z', x: 'X' })}</dd>
+                  <dt><kbd>1</kbd>–<kbd>8</kbd> / <kbd>R</kbd></dt><dd>{t('editor.helpTracksDesc')}</dd>
+                  <dt><kbd>⌘Z</kbd></dt><dd>{t('editor.helpUndoDesc')}</dd>
+                  <dt>{t('editor.helpProjectKey')}</dt><dd>{t('editor.helpProjectDesc')}</dd>
+                  <dt>{t('editor.helpBgKey')}</dt><dd>{t('editor.helpBgDesc')}</dd>
                 </dl>
               </div>
             )}
           </Popover>
           <Popover
-            label="设置"
+            label={t('editor.settingsLabel')}
             trigger={<Icon name="settings" />}
             icon
             menuClassName="is-panel"
@@ -326,7 +336,7 @@ export function Editor(): JSX.Element {
       {state.showSidebarTip ? (
         <div role="status" className="dsyn-tip">
           <span>
-            首次进入提示：默认已在左侧边栏底部开启「快捷播放控制」，返回对话时也可随时暂停或静音；你可在右上角「设置」中随时开启或关闭此项。
+            {t('editor.onboardingText')}
           </span>
           <div className="dsyn-group" style={{ flexShrink: 0 }}>
             <button
@@ -337,14 +347,14 @@ export function Editor(): JSX.Element {
                 setSettingsOpen(true)
               }}
             >
-              打开设置
+              {t('editor.openSettings')}
             </button>
             <button
               type="button"
               className="dsyn-btn is-small is-quiet"
               onClick={() => { store.dismissSidebarTip() }}
             >
-              知道了
+              {t('editor.gotIt')}
             </button>
           </div>
         </div>
@@ -353,14 +363,14 @@ export function Editor(): JSX.Element {
       {state.error !== null ? (
         <div role="alert" className="dsyn-alert">
           <span>{errorText(state.error)}</span>
-          <button type="button" aria-label="关闭提示" onClick={() => { store.setError(null) }} className="dsyn-btn is-small is-icon is-quiet">
+          <button type="button" aria-label={t('editor.dismissAlert')} onClick={() => { store.setError(null) }} className="dsyn-btn is-small is-icon is-quiet">
             <Icon name="close" size={14} />
           </button>
         </div>
       ) : null}
 
       <div className="dsyn-body">
-        <aside aria-label="音轨" className="dsyn-tracks">
+        <aside aria-label={t('editor.tracksAria')} className="dsyn-tracks">
           {project.tracks.map((track) => {
             const active = track.id === selected.id
             const dimmed = !isTrackAudible(track, project.tracks)
@@ -375,7 +385,7 @@ export function Editor(): JSX.Element {
               >
                 <div className="dsyn-track-row">
                   <input
-                    aria-label={`${track.name}名称`}
+                    aria-label={t('editor.trackNameAria', { name: track.name })}
                     value={track.name}
                     onFocus={() => { store.selectTrack(track.id) }}
                     onChange={(event) => {
@@ -385,9 +395,9 @@ export function Editor(): JSX.Element {
                   />
                   <button
                     type="button"
-                    aria-label={`独奏${track.name}`}
+                    aria-label={t('editor.soloAria', { name: track.name })}
                     aria-pressed={track.solo === true}
-                    title={track.solo ? '取消独奏' : '独奏此音轨'}
+                    title={track.solo ? t('editor.unsoloTitle') : t('editor.soloTitle')}
                     onClick={(event) => {
                       event.stopPropagation()
                       store.updateTrack(track.id, { solo: track.solo ? undefined : true })
@@ -399,9 +409,9 @@ export function Editor(): JSX.Element {
                   </button>
                   <button
                     type="button"
-                    aria-label={`静音${track.name}`}
+                    aria-label={t('editor.muteAria', { name: track.name })}
                     aria-pressed={effectiveMuted}
-                    title={track.mute ? '取消静音' : effectiveMuted ? '因其他音轨独奏而静音' : '静音此音轨'}
+                    title={track.mute ? t('editor.unmuteTitle') : effectiveMuted ? t('editor.mutedBySoloTitle') : t('editor.muteTitle')}
                     onClick={(event) => {
                       event.stopPropagation()
                       store.updateTrack(track.id, { mute: !track.mute })
@@ -413,8 +423,8 @@ export function Editor(): JSX.Element {
                   </button>
                   <button
                     type="button"
-                    aria-label={`移除${track.name}`}
-                    title="移除此音轨（可撤销）"
+                    aria-label={t('editor.removeAria', { name: track.name })}
+                    title={t('editor.removeTitle')}
                     disabled={project.tracks.length <= 1}
                     onClick={(event) => {
                       event.stopPropagation()
@@ -427,14 +437,14 @@ export function Editor(): JSX.Element {
                 </div>
                 <div className="dsyn-track-row">
                   <select
-                    aria-label={`${track.name}音色`}
+                    aria-label={t('editor.trackPatchAria', { name: track.name })}
                     value={track.instrumentId}
                     onChange={(event) => { store.updateTrack(track.id, { instrumentId: event.target.value }) }}
                     className="dsyn-field is-quiet dsyn-track-inst"
                   >
                     {instruments.map((instrument) => (
                       <option key={instrument.id} value={instrument.id}>
-                        {(INSTRUMENT_LABELS[instrument.id] ?? instrument.id).split(' ')[0]}
+                        {instrumentLabel(instrument.id).split(' ')[0]}
                       </option>
                     ))}
                     {instruments.some((instrument) => instrument.id === track.instrumentId)
@@ -442,8 +452,8 @@ export function Editor(): JSX.Element {
                       : <option value={track.instrumentId}>{track.instrumentId}</option>}
                   </select>
                   <input
-                    aria-label={`${track.name}音量`}
-                    title={`音量 ${Math.round(track.gain * 100)}%`}
+                    aria-label={t('editor.trackGainAria', { name: track.name })}
+                    title={t('editor.trackGainTitle', { percent: Math.round(track.gain * 100) })}
                     type="range"
                     min={0}
                     max={1}
@@ -454,13 +464,13 @@ export function Editor(): JSX.Element {
                     style={rangeFill(track.gain, 0, 1)}
                   />
                   <input
-                    aria-label={`${track.name}声像`}
+                    aria-label={t('editor.trackPanAria', { name: track.name })}
                     title={
                       Math.abs(track.pan ?? 0) < 0.01
-                        ? '声像 中（双击归中）'
+                        ? t('editor.trackPanCenterTitle')
                         : (track.pan ?? 0) < 0
-                          ? `声像 左 ${Math.round(Math.abs(track.pan ?? 0) * 100)}%（双击归中）`
-                          : `声像 右 ${Math.round((track.pan ?? 0) * 100)}%（双击归中）`
+                          ? t('editor.trackPanLeftTitle', { percent: Math.round(Math.abs(track.pan ?? 0) * 100) })
+                          : t('editor.trackPanRightTitle', { percent: Math.round((track.pan ?? 0) * 100) })
                     }
                     type="range"
                     min={-1}
@@ -480,11 +490,11 @@ export function Editor(): JSX.Element {
             type="button"
             className="dsyn-btn is-quiet dsyn-add"
             disabled={project.tracks.length >= MAX_TRACKS}
-            title={project.tracks.length >= MAX_TRACKS ? `最多 ${MAX_TRACKS} 条音轨` : undefined}
+            title={project.tracks.length >= MAX_TRACKS ? t('editor.maxTracksTitle', { max: MAX_TRACKS }) : undefined}
             onClick={() => { store.addTrack() }}
           >
             <Icon name="plus" />
-            添加音轨
+            {t('editor.addTrack')}
           </button>
         </aside>
 
@@ -523,9 +533,9 @@ function DeletedToast({
   }, [])
   return (
     <div role="status" className="dsyn-toast">
-      <span>已删除「{name}」</span>
-      <button type="button" className="dsyn-btn is-small" onClick={onUndo}>撤销</button>
-      <button type="button" aria-label="关闭" className="dsyn-btn is-small is-icon is-quiet" onClick={onDismiss}>
+      <span>{t('editor.deletedToast', { name })}</span>
+      <button type="button" className="dsyn-btn is-small" onClick={onUndo}>{t('editor.undo')}</button>
+      <button type="button" aria-label={t('editor.close')} className="dsyn-btn is-small is-icon is-quiet" onClick={onDismiss}>
         <Icon name="close" size={14} />
       </button>
     </div>
@@ -580,10 +590,16 @@ function NumberField({
   )
 }
 
-const SIDECHAIN_OPTIONS: ReadonlyArray<{ id: SidechainStrength; label: string }> = [
-  { id: 'off', label: '关闭' },
-  { id: 'normal', label: '标准' },
-  { id: 'strong', label: '强烈' },
+const SIDECHAIN_OPTIONS: ReadonlyArray<{ id: SidechainStrength; labelKey: MessageKey }> = [
+  { id: 'off', labelKey: 'settings.sidechainOff' },
+  { id: 'normal', labelKey: 'settings.sidechainNormal' },
+  { id: 'strong', labelKey: 'settings.sidechainStrong' },
+]
+
+const LOCALE_OPTIONS: ReadonlyArray<{ id: LocaleSetting; labelKey: MessageKey }> = [
+  { id: 'auto', labelKey: 'settings.langAuto' },
+  { id: 'zh-CN', labelKey: 'settings.langZh' },
+  { id: 'en', labelKey: 'settings.langEn' },
 ]
 
 function SettingSwitchRow({
@@ -618,31 +634,56 @@ function SettingSwitchRow({
 }
 
 function SettingsPanel({ state }: { state: ReturnType<typeof useProject> }): JSX.Element {
+  useLocale()
   const store = getProjectStore()
+  const localeSetting = getLocaleSetting()
   const volumePercent = Math.round(state.masterVolume * 100)
 
   return (
     <div className="dsyn-settings">
-      <div className="dsyn-settings-title">播放与音频总控</div>
+      <div className="dsyn-settings-title">{t('settings.languageTitle')}</div>
+      <div className="dsyn-setting-row is-stack">
+        <div className="dsyn-setting-head">
+          <span className="dsyn-setting-name">{t('settings.languageName')}</span>
+          <div className="dsyn-seg" role="tablist" aria-label={t('settings.languageName')}>
+            {LOCALE_OPTIONS.map((option) => (
+              <button
+                key={option.id}
+                type="button"
+                role="tab"
+                aria-selected={localeSetting === option.id}
+                onClick={() => { setLocaleSetting(option.id) }}
+                style={{ height: 22, padding: '0 8px', fontSize: 11 }}
+              >
+                {t(option.labelKey)}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div className="dsyn-caption">{t('settings.languageDesc')}</div>
+      </div>
+
+      <div className="dsyn-menu-rule" />
+      <div className="dsyn-settings-title">{t('settings.audioTitle')}</div>
       <SettingSwitchRow
-        name="在侧栏展示快捷控制"
-        description="离开合成器页面后，在左侧边栏底部展示播放、停止、进度与静音快捷控制（默认开启）"
+        name={t('settings.sidebarTransportName')}
+        description={t('settings.sidebarTransportDesc')}
         checked={state.showSidebarTransport}
         onToggle={() => { store.setShowSidebarTransport(!state.showSidebarTransport) }}
       />
       <SettingSwitchRow
-        name="离开页面保持后台播放"
-        description="切换到其他页面后继续循环播放，关闭则在离开编辑器时自动暂停"
+        name={t('settings.bgPlayName')}
+        description={t('settings.bgPlayDesc')}
         checked={state.backgroundPlayback}
         onToggle={() => { store.setBackgroundPlayback(!state.backgroundPlayback) }}
       />
       <div className="dsyn-setting-row is-stack">
         <div className="dsyn-setting-head">
-          <span className="dsyn-setting-name">全局主音量</span>
+          <span className="dsyn-setting-name">{t('settings.masterVolName')}</span>
           <output className="dsyn-setting-val">{volumePercent}%</output>
         </div>
         <input
-          aria-label="全局主音量"
+          aria-label={t('settings.masterVolName')}
           type="range"
           min={0}
           max={1}
@@ -655,8 +696,8 @@ function SettingsPanel({ state }: { state: ReturnType<typeof useProject> }): JSX
       </div>
       <div className="dsyn-setting-row is-stack">
         <div className="dsyn-setting-head">
-          <span className="dsyn-setting-name">底鼓侧链闪避 (Sidechain)</span>
-          <div className="dsyn-seg" role="tablist" aria-label="底鼓侧链闪避">
+          <span className="dsyn-setting-name">{t('settings.sidechainName')}</span>
+          <div className="dsyn-seg" role="tablist" aria-label={t('settings.sidechainName')}>
             {SIDECHAIN_OPTIONS.map((option) => (
               <button
                 key={option.id}
@@ -666,80 +707,83 @@ function SettingsPanel({ state }: { state: ReturnType<typeof useProject> }): JSX
                 onClick={() => { store.setSidechainStrength(option.id) }}
                 style={{ height: 22, padding: '0 8px', fontSize: 11 }}
               >
-                {option.label}
+                {t(option.labelKey)}
               </button>
             ))}
           </div>
         </div>
-        <div className="dsyn-caption">底鼓触发时自动压低旋律音轨音量，营造泵感节奏</div>
+        <div className="dsyn-caption">{t('settings.sidechainDesc')}</div>
       </div>
 
       <div className="dsyn-menu-rule" />
-      <div className="dsyn-settings-title">编曲与交互偏好</div>
+      <div className="dsyn-settings-title">{t('settings.prefTitle')}</div>
       <SettingSwitchRow
-        name="点击网格画音符时试听发声"
-        description="在钢琴卷帘或鼓机网格落笔添加音符时即时发声预览"
+        name={t('settings.auditionName')}
+        description={t('settings.auditionDesc')}
         checked={state.auditionOnDraw}
         onToggle={() => { store.setAuditionOnDraw(!state.auditionOnDraw) }}
       />
       <SettingSwitchRow
-        name="电脑键盘弹奏 (A–P / Z X / R)"
-        description="允许直接用键盘字母区试奏音色并切换八度/录制；空格与数字切轨保持可用"
+        name={t('settings.qwertyName')}
+        description={t('settings.qwertyDesc')}
         checked={state.qwertyPianoEnabled}
         onToggle={() => { store.setQwertyPianoEnabled(!state.qwertyPianoEnabled) }}
       />
       <SettingSwitchRow
-        name="默认淡显其他音轨音符"
-        description="打开工程时默认在背景叠加显示其他未静音旋律轨的鬼影音符"
+        name={t('settings.ghostName')}
+        description={t('settings.ghostDesc')}
         checked={state.showGhostNotes}
         onToggle={() => { store.setShowGhostNotes(!state.showGhostNotes) }}
       />
       <SettingSwitchRow
-        name="实时示波器动画"
-        description="在音色面板显示实时波形动画，关闭可减少浏览器重绘开销"
+        name={t('settings.scopeName')}
+        description={t('settings.scopeDesc')}
         checked={state.showOscilloscope}
         onToggle={() => { store.setShowOscilloscope(!state.showOscilloscope) }}
       />
 
       <div className="dsyn-menu-rule" />
-      <div className="dsyn-settings-title">外设与默认设置</div>
+      <div className="dsyn-settings-title">{t('settings.devicesTitle')}</div>
       <div className="dsyn-setting-row is-stack">
         <div className="dsyn-setting-head">
-          <span className="dsyn-setting-name">USB MIDI 外设</span>
+          <span className="dsyn-setting-name">{t('settings.midiName')}</span>
           <span className="dsyn-setting-badge">
-            {state.midiDevices.length > 0 ? `${state.midiDevices.length} 台已连接` : '未连接'}
+            {state.midiDevices.length > 0 ? t('settings.midiConnected', { count: state.midiDevices.length }) : t('settings.midiDisconnected')}
           </span>
         </div>
         <div className="dsyn-caption">
           {state.midiDevices.length > 0
-            ? state.midiDevices.join('、')
-            : '未检测到外接 MIDI 设备，接入后即可直接演奏'}
+            ? state.midiDevices.join(', ')
+            : t('settings.midiNoneDesc')}
         </div>
       </div>
       <div className="dsyn-setting-actions">
         <button
           type="button"
           className="dsyn-btn is-small"
-          onClick={() => { store.resetSettings() }}
+          onClick={() => {
+            store.resetSettings()
+            resetLocaleCache()
+          }}
         >
-          恢复默认设置
+          {t('settings.reset')}
         </button>
       </div>
 
       <div className="dsyn-menu-rule" />
-      <div className="dsyn-settings-title">关于与版权信息</div>
+      <div className="dsyn-settings-title">{t('settings.aboutTitle')}</div>
       <div className="dsyn-about">
         <div className="dsyn-about-head">
-          <strong>DSH Synthesizer · 合成器工作台</strong>
+          <strong>{t('settings.aboutName')}</strong>
           <span className="dsyn-version">v{VERSION}</span>
         </div>
         <p className="dsyn-caption" style={{ margin: 0 }}>
-          基于 Web Audio API 的多轨合成器与鼓机工作台，支持调式和弦编曲、实时滤波器调制、侧链闪避与 WAV / MIDI 导出。
+          {t('settings.aboutDesc')}
         </p>
         <dl className="dsyn-about-meta">
-          <dt>开源协议</dt><dd>MIT License</dd>
-          <dt>版权所有</dt><dd>© 2026 Yishan. All rights reserved.</dd>
-          <dt>项目仓库</dt>
+          <dt>{t('settings.aboutLicense')}</dt><dd>MIT License</dd>
+          <dt>{t('settings.aboutCopyright')}</dt><dd>© 2026 Yishan. All rights reserved.</dd>
+          <dt>{t('settings.aboutRepo')}</dt>
           <dd>
             <a
               href="https://github.com/yishan/dsh-synthesizer"

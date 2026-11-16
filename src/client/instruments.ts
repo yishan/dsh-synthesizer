@@ -14,6 +14,7 @@ import {
   type LfoTarget,
   type SynthPatch,
 } from '../model.ts'
+import { t, type MessageKey } from './i18n.ts'
 
 export interface ScheduledNote {
   stop(time: number): void
@@ -66,8 +67,71 @@ export const TRACK_NAMES: Record<string, string> = {
   drums: '鼓',
 }
 
+const INSTRUMENT_LABEL_KEYS: Record<string, MessageKey> = {
+  lead: 'inst.lead',
+  bass: 'inst.bass',
+  pad: 'inst.pad',
+  keys: 'inst.keys',
+  acid: 'inst.acid',
+  pluck: 'inst.pluck',
+  chip: 'inst.chip',
+  bell: 'inst.bell',
+  drums: 'inst.drums',
+}
+
+const TRACK_NAME_KEYS: Record<string, MessageKey> = {
+  lead: 'track.lead',
+  bass: 'track.bass',
+  pad: 'track.pad',
+  keys: 'track.keys',
+  acid: 'track.acid',
+  pluck: 'track.pluck',
+  chip: 'track.chip',
+  bell: 'track.bell',
+  drums: 'track.drums',
+}
+
+const DRUM_LABEL_KEYS: Record<number, MessageKey> = {
+  [DRUM_CYMBAL]: 'drum.cymbal',
+  [DRUM_OPEN_HAT]: 'drum.openHat',
+  [DRUM_TOM_LOW]: 'drum.tom',
+  [DRUM_HAT]: 'drum.hat',
+  [DRUM_CLAP]: 'drum.clap',
+  [DRUM_SNARE]: 'drum.snare',
+  [DRUM_RIM]: 'drum.rim',
+  [DRUM_KICK]: 'drum.kick',
+}
+
+const KIT_LABEL_KEYS: Record<string, { label: MessageKey; desc: MessageKey }> = {
+  classic: { label: 'kit.classic', desc: 'kit.classicDesc' },
+  '808': { label: 'kit.808', desc: 'kit.808Desc' },
+  lofi: { label: 'kit.lofi', desc: 'kit.lofiDesc' },
+  chip: { label: 'kit.chip', desc: 'kit.chipDesc' },
+}
+
+export function instrumentLabel(id: string): string {
+  const key = INSTRUMENT_LABEL_KEYS[id]
+  return key !== undefined ? t(key) : (INSTRUMENT_LABELS[id] ?? id)
+}
+
+export function drumPieceLabel(pitch: number): string {
+  const key = DRUM_LABEL_KEYS[pitch]
+  return key !== undefined ? t(key) : (DRUM_LABELS[pitch]?.name ?? '')
+}
+
+export function drumKitLabel(kit: { id: string; label: string }): string {
+  const keys = KIT_LABEL_KEYS[kit.id]
+  return keys !== undefined ? t(keys.label) : kit.label
+}
+
+export function drumKitDescription(kit: { id: string; description: string }): string {
+  const keys = KIT_LABEL_KEYS[kit.id]
+  return keys !== undefined ? t(keys.desc) : kit.description
+}
+
 export function defaultTrackName(instrumentId: string): string {
-  return TRACK_NAMES[instrumentId] ?? '音轨'
+  const key = TRACK_NAME_KEYS[instrumentId]
+  return key !== undefined ? t(key) : t('track.default')
 }
 
 export const DRUM_LABELS: Record<number, { name: string; short: string; piece: DrumPiece; color: string }> = {

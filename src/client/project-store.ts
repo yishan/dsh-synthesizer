@@ -20,6 +20,7 @@ import {
   type Track,
 } from '../model.ts'
 import { deleteProject, listProjectsWithSync, readProject, saveProject, type ProjectSummary } from './api.ts'
+import { t } from './i18n.ts'
 import {
   clearViewState,
   getLastProjectId,
@@ -553,7 +554,7 @@ export class ProjectClient {
     const copy = await saveProject({
       ...source,
       id: createProjectId(),
-      name: uniqueName(`${source.name} 副本`, this.names()),
+      name: uniqueName(t('project.copyName', { name: source.name }), this.names()),
     })
     this.replaceProject(copy, summaryOf(copy, this.state.projects), false)
   }

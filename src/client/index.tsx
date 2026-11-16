@@ -10,6 +10,7 @@ import { createElement } from 'react'
 import { VERSION } from '../version.ts'
 import { Editor } from './Editor.tsx'
 import { getEngine } from './engine.ts'
+import { t } from './i18n.ts'
 import { getProjectStore } from './project-store.ts'
 import { SidebarIcon } from './SidebarIcon.tsx'
 import { Transport } from './Transport.tsx'
@@ -92,7 +93,7 @@ export function apply(ctx: ClientContext): void {
   mount('sidebar.panellist', () =>
     slots.inject('sidebar.panellist', () =>
       slots.register(
-        { name: 'sidebar.panellist', id: PANEL_ID, order: 40, label: () => '合成器' },
+        { name: 'sidebar.panellist', id: PANEL_ID, order: 40, label: () => t('panel.title') },
         (props) => createElement(SidebarIcon, { size: typeof props.size === 'number' ? props.size : undefined }),
       ),
     ),

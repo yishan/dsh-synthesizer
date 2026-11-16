@@ -10,21 +10,26 @@ import {
 } from '../model.ts'
 import { auditionBase } from './audition.ts'
 import { getEngine } from './engine.ts'
+import { t, useLocale, type MessageKey } from './i18n.ts'
 import { Icon } from './icons.tsx'
-import { DRUM_LABELS } from './instruments.ts'
+import { drumPieceLabel } from './instruments.ts'
 import {
   addDrumFill,
   addEuclideanDrumRhythm,
   buildScaleChord,
   CHORD_PROGRESSIONS,
+  chordProgressionLabel,
   DRUM_PATTERN_LIST,
+  drumPatternLabel,
   generateDrumPattern,
   generateMelodicPattern,
   humanizeNotes,
   isPitchInScale,
   MELODIC_PATTERN_LIST,
+  melodicPatternLabel,
   ROOT_NOTES,
   SCALES,
+  scaleName,
   snapNotesToScale,
   transposeNotes,
   type ChordBrushMode,
@@ -48,8 +53,8 @@ const QWERTY_HINT_LABELS = ['A', 'W', 'S', 'E', 'D', 'F', 'T', 'G', 'Y', 'H', 'U
 
 export function pitchLabel(pitch: number, drums: boolean): string {
   if (drums) {
-    const info = DRUM_LABELS[pitch]
-    if (info !== undefined) return info.name.split(' ')[0] ?? info.name
+    const label = drumPieceLabel(pitch)
+    if (label !== '') return label.split(' ')[0] ?? label
   }
   const name = NAMES[pitch % 12] ?? 'C'
   return `${name}${Math.floor(pitch / 12) - 1}`
@@ -64,16 +69,16 @@ interface DragGesture {
 
 type DrawerTab = 'sound' | 'arrange' | 'keys'
 
-const TABS: ReadonlyArray<{ id: DrawerTab; label: string }> = [
-  { id: 'sound', label: '音色' },
-  { id: 'arrange', label: '编曲' },
-  { id: 'keys', label: '弹奏' },
+const TABS: ReadonlyArray<{ id: DrawerTab; labelKey: MessageKey }> = [
+  { id: 'sound', labelKey: 'roll.tab.sound' },
+  { id: 'arrange', labelKey: 'roll.tab.arrange' },
+  { id: 'keys', labelKey: 'roll.tab.keys' },
 ]
 
-const BRUSH_MODES: ReadonlyArray<{ id: ChordBrushMode; label: string }> = [
-  { id: 'single', label: '单音' },
-  { id: 'triad', label: '三和弦' },
-  { id: 'seventh', label: '七和弦' },
+const BRUSH_MODES: ReadonlyArray<{ id: ChordBrushMode; labelKey: MessageKey }> = [
+  { id: 'single', labelKey: 'roll.brush.single' },
+  { id: 'triad', labelKey: 'roll.brush.triad' },
+  { id: 'seventh', labelKey: 'roll.brush.seventh' },
 ]
 
 /**
@@ -83,6 +88,7 @@ const BRUSH_MODES: ReadonlyArray<{ id: ChordBrushMode; label: string }> = [
  * drag-to-length notes, scale shading, and ghost notes from the other tracks.
  */
 export function PianoRoll({ track, bars, playing }: { track: Track; bars: number; playing: boolean }): JSX.Element {
+  useLocale()
   const state = useProject()
   const store = getProjectStore()
   const engine = getEngine()
@@ -244,23 +250,23 @@ export function PianoRoll({ track, bars, playing }: { track: Track; bars: number
         ref={scroller}
         tabIndex={0}
         role="application"
-        aria-label={drums ? `${track.name} 鼓机步进器` : `${track.name} 钢琴卷帘`}
+        aria-label={drums ? t('roll.drumGridAria', { name: track.name }) : t('roll.pianoGridAria', { name: track.name })}
         data-piano-roll="dsh-synthesizer"
         className="dsyn-roll"
       >
         <div style={{ width: KEY_LABEL_WIDTH + steps * CELL, position: 'relative' }}>
           <div className="dsyn-ruler">
             <div className="dsyn-corner" style={{ width: KEY_LABEL_WIDTH, flex: `0 0 ${KEY_LABEL_WIDTH}px` }}>
-              小节
+              {t('roll.bar')}
             </div>
             <div
               role="slider"
-              aria-label="播放位置"
+              aria-label={t('transport.positionAria')}
               aria-valuemin={0}
               aria-valuemax={bars * 4}
               aria-valuenow={0}
               tabIndex={-1}
-              title="点击跳到该位置"
+              title={t('roll.seekTitle')}
               onClick={(event) => {
                 const bounds = event.currentTarget.getBoundingClientRect()
                 const step = Math.max(0, Math.min(steps - 1, Math.floor((event.clientX - bounds.left) / CELL)))
@@ -307,8 +313,8 @@ export function PianoRoll({ track, bars, playing }: { track: Track; bars: number
                 <div
                   role="button"
                   tabIndex={-1}
-                  aria-label={`试听 ${label}`}
-                  title={isRoot ? `${label}（调式主音）` : undefined}
+                  aria-label={t('roll.auditionPitch', { label })}
+                  title={isRoot ? t('roll.scaleRootTitle', { label }) : undefined}
                   onMouseDown={() => {
                     engine.previewDown(track.instrumentId, pitch, track.synth)
                     setActiveKeyPitch(pitch)
@@ -359,12 +365,12 @@ export function PianoRoll({ track, bars, playing }: { track: Track; bars: number
 
           <div className="dsyn-velocity" style={{ height: VELOCITY_HEIGHT }}>
             <div className="dsyn-key" style={{ width: KEY_LABEL_WIDTH, flex: `0 0 ${KEY_LABEL_WIDTH}px`, cursor: 'default' }}>
-              力度
+              {t('roll.velocity')}
             </div>
             <div
               role="group"
-              aria-label="力度"
-              title="上下拖动调整这一步的力度"
+              aria-label={t('roll.velocity')}
+              title={t('roll.velocityTitle')}
               className="dsyn-velocity-lane"
               style={{ width: steps * CELL, backgroundSize: `${CELL * 16}px 100%, ${CELL * 4}px 100%` }}
               onMouseDown={(event) => {
@@ -378,7 +384,7 @@ export function PianoRoll({ track, bars, playing }: { track: Track; bars: number
                 <div
                   key={step}
                   className="dsyn-velocity-bar"
-                  title={`力度 ${velocity}`}
+                  title={t('roll.velocityVal', { v: velocity })}
                   style={{ left: step * CELL + 3, width: CELL - 6, height: `${(velocity / 127) * 100}%` }}
                 />
               ))}
@@ -387,7 +393,7 @@ export function PianoRoll({ track, bars, playing }: { track: Track; bars: number
         </div>
       </div>
 
-      <section className="dsyn-drawer" aria-label={`${track.name} 工具`}>
+      <section className="dsyn-drawer" aria-label={t('roll.toolsAria', { name: track.name })}>
         <div className="dsyn-tabs">
           <div className="dsyn-line">
             <div className="dsyn-seg" role="tablist">
@@ -402,12 +408,12 @@ export function PianoRoll({ track, bars, playing }: { track: Track; bars: number
                     setTab(item.id)
                   }}
                 >
-                  {item.label}
+                  {t(item.labelKey)}
                 </button>
               ))}
             </div>
             {drums ? null : (
-              <div className="dsyn-seg" role="group" aria-label="落笔模式" title="点击网格时画单音，或自动按当前调式生成顺阶三和弦 / 七和弦">
+              <div className="dsyn-seg" role="group" aria-label={t('roll.brushGroupAria')} title={t('roll.brushGroupTitle')}>
                 {BRUSH_MODES.map((item) => (
                   <button
                     key={item.id}
@@ -415,7 +421,7 @@ export function PianoRoll({ track, bars, playing }: { track: Track; bars: number
                     aria-pressed={brushMode === item.id}
                     onClick={() => { setBrushMode(item.id) }}
                   >
-                    {item.label}
+                    {t(item.labelKey)}
                   </button>
                 ))}
               </div>
@@ -425,16 +431,16 @@ export function PianoRoll({ track, bars, playing }: { track: Track; bars: number
             <button
               type="button"
               aria-pressed={state.recordArm}
-              title="开启后，播放时弹奏的音会记入当前音轨"
+              title={t('roll.recordTitle')}
               onClick={() => { store.setRecordArm(!state.recordArm) }}
               className="dsyn-btn is-danger"
             >
               <span className="dsyn-rec-dot" aria-hidden="true" />
-              {state.recordArm ? '录制中' : '边弹边录'}
+              {state.recordArm ? t('roll.recording') : t('roll.recordArm')}
             </button>
             <button
               type="button"
-              aria-label={drawerOpen ? '收起工具栏' : '展开工具栏'}
+              aria-label={drawerOpen ? t('roll.collapseDrawer') : t('roll.expandDrawer')}
               aria-expanded={drawerOpen}
               onClick={() => { setDrawerOpen(!drawerOpen) }}
               className="dsyn-btn is-icon is-quiet"
@@ -452,9 +458,9 @@ export function PianoRoll({ track, bars, playing }: { track: Track; bars: number
               <>
                 {drums ? null : (
                   <div className="dsyn-line">
-                    <span className="dsyn-label">调式</span>
+                    <span className="dsyn-label">{t('roll.scale')}</span>
                     <select
-                      aria-label="根音"
+                      aria-label={t('roll.scaleRoot')}
                       value={state.scaleRoot}
                       onChange={(event) => { store.setScale(Number(event.target.value), state.scaleId) }}
                       className="dsyn-field"
@@ -462,45 +468,45 @@ export function PianoRoll({ track, bars, playing }: { track: Track; bars: number
                       {ROOT_NOTES.map((root) => <option key={root.semitone} value={root.semitone}>{root.name}</option>)}
                     </select>
                     <select
-                      aria-label="音阶"
+                      aria-label={t('roll.scaleId')}
                       value={state.scaleId}
                       onChange={(event) => { store.setScale(state.scaleRoot, event.target.value) }}
                       className="dsyn-field"
                     >
-                      {SCALES.map((scale) => <option key={scale.id} value={scale.id}>{scale.name.split(' ')[0]}</option>)}
+                      {SCALES.map((scale) => <option key={scale.id} value={scale.id}>{scaleName(scale).split(' ')[0]}</option>)}
                     </select>
-                    <span className="dsyn-label">进行</span>
+                    <span className="dsyn-label">{t('roll.progression')}</span>
                     <select
-                      aria-label="和弦进行"
+                      aria-label={t('roll.progressionAria')}
                       value={progressionId}
                       onChange={(event) => { setProgressionId(event.target.value as ChordProgressionId) }}
                       className="dsyn-field"
                     >
-                      {CHORD_PROGRESSIONS.map((prog) => <option key={prog.id} value={prog.id}>{prog.label}</option>)}
+                      {CHORD_PROGRESSIONS.map((prog) => <option key={prog.id} value={prog.id}>{chordProgressionLabel(prog)}</option>)}
                     </select>
-                    <span className="dsyn-caption">调外的音在网格里显示为深色行</span>
+                    <span className="dsyn-caption">{t('roll.scaleCaption')}</span>
                   </div>
                 )}
                 <div className="dsyn-spread">
                   <div className="dsyn-line">
-                    <span className="dsyn-label">{drums ? '填入节奏' : '生成乐句'}</span>
+                    <span className="dsyn-label">{drums ? t('roll.fillDrums') : t('roll.genMelody')}</span>
                     {drums
                       ? DRUM_PATTERN_LIST.map((pattern) => (
                           <button
                             key={pattern.id}
                             type="button"
-                            title="替换本轨全部音符（可撤销）"
+                            title={t('roll.replaceTrackTitle')}
                             onClick={() => { store.setTrackNotes(track.id, generateDrumPattern(pattern.id, bars)) }}
                             className="dsyn-btn"
                           >
-                            {pattern.label}
+                            {drumPatternLabel(pattern)}
                           </button>
                         ))
                       : MELODIC_PATTERN_LIST.map((pattern) => (
                           <button
                             key={pattern.id}
                             type="button"
-                            title="替换本轨全部音符（可撤销）"
+                            title={t('roll.replaceTrackTitle')}
                             onClick={() => {
                               store.setTrackNotes(
                                 track.id,
@@ -509,7 +515,7 @@ export function PianoRoll({ track, bars, playing }: { track: Track; bars: number
                             }}
                             className="dsyn-btn"
                           >
-                            {pattern.label}
+                            {melodicPatternLabel(pattern)}
                           </button>
                         ))}
                   </div>
@@ -521,32 +527,32 @@ export function PianoRoll({ track, bars, playing }: { track: Track; bars: number
                           onClick={() => { store.setTrackNotes(track.id, transposeNotes(track.notes, -12)) }}
                           className="dsyn-btn"
                         >
-                          降八度
+                          {t('roll.octDown')}
                         </button>
                         <button
                           type="button"
                           onClick={() => { store.setTrackNotes(track.id, transposeNotes(track.notes, 12)) }}
                           className="dsyn-btn"
                         >
-                          升八度
+                          {t('roll.octUp')}
                         </button>
                         <button
                           type="button"
-                          title="将当前音轨所有音符就近修正到当前调式音阶内（可撤销）"
+                          title={t('roll.snapScaleTitle')}
                           disabled={track.notes.length === 0 || state.scaleId === 'chromatic'}
                           onClick={() => { store.setTrackNotes(track.id, snapNotesToScale(track.notes, state.scaleRoot, state.scaleId)) }}
                           className="dsyn-btn"
                         >
-                          吸附到调式
+                          {t('roll.snapScale')}
                         </button>
                         <button
                           type="button"
                           aria-pressed={state.showGhostNotes}
-                          title="在网格里淡显其它音轨的音符"
+                          title={t('roll.ghostTitle')}
                           onClick={() => { store.setShowGhostNotes(!state.showGhostNotes) }}
                           className="dsyn-btn"
                         >
-                          显示其它轨
+                          {t('roll.ghost')}
                         </button>
                       </>
                     )}
@@ -554,48 +560,48 @@ export function PianoRoll({ track, bars, playing }: { track: Track; bars: number
                       <>
                         <button
                           type="button"
-                          title="在最后一小节末尾半拍生成军鼓/通鼓加花过渡（可撤销）"
+                          title={t('roll.fillEndTitle')}
                           onClick={() => { store.setTrackNotes(track.id, addDrumFill(track.notes, bars)) }}
                           className="dsyn-btn"
                         >
-                          末尾加花
+                          {t('roll.fillEnd')}
                         </button>
                         <button
                           type="button"
-                          title="使用欧几里得算法 E(5,16) 生成多节奏边击/开镲律动层（可撤销）"
+                          title={t('roll.euclidTitle')}
                           onClick={() => { store.setTrackNotes(track.id, addEuclideanDrumRhythm(track.notes, bars)) }}
                           className="dsyn-btn"
                         >
-                          欧几里得律动
+                          {t('roll.euclid')}
                         </button>
                       </>
                     ) : null}
                     <button
                       type="button"
-                      title="给当前音轨音符施加轻微随机力度起伏，增强律动质感（可撤销）"
+                      title={t('roll.humanizeTitle')}
                       disabled={track.notes.length === 0}
                       onClick={() => { store.setTrackNotes(track.id, humanizeNotes(track.notes)) }}
                       className="dsyn-btn"
                     >
-                      人性化力度
+                      {t('roll.humanize')}
                     </button>
                     <button
                       type="button"
-                      title="把第 1 小节的音符平铺复制到后面所有小节（可撤销）"
+                      title={t('roll.repeatBarTitle')}
                       disabled={bars <= 1 || !hasFirstBarNotes}
                       onClick={() => { store.repeatFirstBar(track.id) }}
                       className="dsyn-btn"
                     >
-                      铺满全曲
+                      {t('roll.repeatBar')}
                     </button>
                     <button
                       type="button"
-                      title="删除本轨全部音符（可撤销）"
+                      title={t('roll.clearTitle')}
                       disabled={track.notes.length === 0}
                       onClick={() => { store.setTrackNotes(track.id, []) }}
                       className="dsyn-btn"
                     >
-                      清空本轨
+                      {t('roll.clear')}
                     </button>
                   </div>
                 </div>
@@ -605,7 +611,7 @@ export function PianoRoll({ track, bars, playing }: { track: Track; bars: number
             {tab === 'keys' ? (
               drums ? (
                 <span className="dsyn-caption">
-                  直接按键盘 A W S E T H U O 敲击对应鼓件{state.midiDevices.length > 0 ? ` · 已连 MIDI: ${state.midiDevices[0]}` : ''}
+                  {t('roll.drumKeysHint')}{state.midiDevices.length > 0 ? t('roll.midiInline', { name: state.midiDevices[0]! }) : ''}
                 </span>
               ) : (
                 <>
@@ -613,26 +619,26 @@ export function PianoRoll({ track, bars, playing }: { track: Track; bars: number
                     <div className="dsyn-line">
                       <button
                         type="button"
-                        aria-label="降低八度"
+                        aria-label={t('roll.keyOctDownAria')}
                         onClick={() => { store.setOctaveOffset(state.octaveOffset - 1) }}
                         className="dsyn-btn"
                       >
-                        低八度 <kbd>Z</kbd>
+                        {t('roll.keyOctDown')} <kbd>Z</kbd>
                       </button>
                       <span className="dsyn-readout">{pitchLabel(basePitch, false)}</span>
                       <button
                         type="button"
-                        aria-label="升高八度"
+                        aria-label={t('roll.keyOctUpAria')}
                         onClick={() => { store.setOctaveOffset(state.octaveOffset + 1) }}
                         className="dsyn-btn"
                       >
-                        高八度 <kbd>X</kbd>
+                        {t('roll.keyOctUp')} <kbd>X</kbd>
                       </button>
                     </div>
                     <span className="dsyn-caption">
                       {state.midiDevices.length > 0
-                        ? `已接入 MIDI：${state.midiDevices.join('、')}`
-                        : '直接用电脑键盘弹奏，或接入 USB MIDI 键盘'}
+                        ? t('roll.midiConnected', { names: state.midiDevices.join(', ') })
+                        : t('roll.midiPrompt')}
                     </span>
                   </div>
                   <div className="dsyn-keys">
@@ -645,7 +651,7 @@ export function PianoRoll({ track, bars, playing }: { track: Track; bars: number
                         <button
                           key={pitch}
                           type="button"
-                          aria-label={`琴键 ${pitchLabel(pitch, false)}`}
+                          aria-label={t('roll.pianoKeyAria', { label: pitchLabel(pitch, false) })}
                           onMouseDown={() => {
                             engine.previewDown(track.instrumentId, pitch, track.synth)
                             setActiveKeyPitch(pitch)

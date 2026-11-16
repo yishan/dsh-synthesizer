@@ -3,9 +3,10 @@ import { MAX_PROJECTS, type Project } from '../model.ts'
 import type { ProjectSummary } from './api.ts'
 import { downloadFile, safeFileName } from './download.ts'
 import { getEngine } from './engine.ts'
+import { t, useLocale } from './i18n.ts'
 import { Icon } from './icons.tsx'
 import { projectToMidi } from './midi.ts'
-import { SONG_PRESETS } from './presets.ts'
+import { SONG_PRESETS, songPresetTitle } from './presets.ts'
 import { getProjectStore, type SessionState } from './project-store.ts'
 import { encodeWav, renderProject } from './render.ts'
 
@@ -16,13 +17,13 @@ export function relativeTime(iso: string, now = Date.now()): string {
   const then = Date.parse(iso)
   if (!Number.isFinite(then)) return ''
   const minutes = Math.floor((now - then) / 60_000)
-  if (minutes < 1) return '刚刚'
-  if (minutes < 60) return `${minutes} 分钟前`
+  if (minutes < 1) return t('project.justNow')
+  if (minutes < 60) return t('project.minsAgo', { n: minutes })
   const hours = Math.floor(minutes / 60)
-  if (hours < 24) return `${hours} 小时前`
+  if (hours < 24) return t('project.hoursAgo', { n: hours })
   const days = Math.floor(hours / 24)
-  if (days === 1) return '昨天'
-  if (days < 30) return `${days} 天前`
+  if (days === 1) return t('project.yesterday')
+  if (days < 30) return t('project.daysAgo', { n: days })
   const date = new Date(then)
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
 }
@@ -30,8 +31,8 @@ export function relativeTime(iso: string, now = Date.now()): string {
 function describe(item: ProjectSummary): string {
   const parts: string[] = []
   if (item.bpm !== undefined) parts.push(`${item.bpm} BPM`)
-  if (item.bars !== undefined) parts.push(`${item.bars} 小节`)
-  if (item.notes !== undefined) parts.push(`${item.notes} 音符`)
+  if (item.bars !== undefined) parts.push(t('project.barsUnit', { n: item.bars }))
+  if (item.notes !== undefined) parts.push(t('project.notesUnit', { n: item.notes }))
   const when = relativeTime(item.updatedAt)
   if (when !== '') parts.push(when)
   return parts.join(' · ')
@@ -54,6 +55,7 @@ export function ProjectPanel({
   close: () => void
   run: (action: () => Promise<void>) => Promise<void>
 }): JSX.Element {
+  useLocale()
   const store = getProjectStore()
   const [query, setQuery] = useState('')
   const [renaming, setRenaming] = useState<{ id: string; name: string } | null>(null)
@@ -81,8 +83,8 @@ export function ProjectPanel({
     <div className="dsyn-projects">
       {all.length > SEARCH_THRESHOLD ? (
         <input
-          aria-label="搜索工程"
-          placeholder="搜索工程"
+          aria-label={t('project.search')}
+          placeholder={t('project.search')}
           value={query}
           onChange={(event) => { setQuery(event.target.value) }}
           className="dsyn-field"
@@ -91,7 +93,7 @@ export function ProjectPanel({
       ) : null}
 
       <div className="dsyn-project-list" role="list">
-        {visible.length === 0 ? <div className="dsyn-menu-title">没有名字包含“{query.trim()}”的工程</div> : null}
+        {visible.length === 0 ? <div className="dsyn-menu-title">{t('project.noMatch', { query: query.trim() })}</div> : null}
         {visible.map((item) => {
           const current = item.id === currentId
           const editing = renaming?.id === item.id
@@ -99,7 +101,7 @@ export function ProjectPanel({
             <div key={item.id} role="listitem" className={`dsyn-project${current ? ' is-current' : ''}`}>
               {editing ? (
                 <input
-                  aria-label="工程名称"
+                  aria-label={t('project.nameAria')}
                   autoFocus
                   value={renaming.name}
                   maxLength={80}
@@ -119,7 +121,7 @@ export function ProjectPanel({
                 <button
                   type="button"
                   className="dsyn-project-main"
-                  title={current ? '当前工程' : `打开「${item.name}」`}
+                  title={current ? t('project.currentTitle') : t('project.openTitle', { name: item.name })}
                   onClick={() => {
                     close()
                     void run(() => store.selectProject(item.id))
@@ -127,14 +129,14 @@ export function ProjectPanel({
                   onDoubleClick={() => { setRenaming({ id: item.id, name: item.name }) }}
                 >
                   <span className="dsyn-project-name">{item.name}</span>
-                  <span className="dsyn-project-meta">{current ? `当前 · ${describe(item)}` : describe(item)}</span>
+                  <span className="dsyn-project-meta">{current ? `${t('project.current')} · ${describe(item)}` : describe(item)}</span>
                 </button>
               )}
               {editing ? null : (
                 <div className="dsyn-project-actions">
-                  <RowAction label="重命名" icon="pencil" onClick={() => { setRenaming({ id: item.id, name: item.name }) }} />
+                  <RowAction label={t('project.rename')} icon="pencil" onClick={() => { setRenaming({ id: item.id, name: item.name }) }} />
                   <RowAction
-                    label={full ? `已达 ${MAX_PROJECTS} 个工程上限` : '复制'}
+                    label={full ? t('project.maxProjects', { max: MAX_PROJECTS }) : t('project.duplicate')}
                     icon="copy"
                     disabled={full}
                     onClick={() => {
@@ -143,12 +145,12 @@ export function ProjectPanel({
                     }}
                   />
                   <RowAction
-                    label="导出为文件"
+                    label={t('project.exportFile')}
                     icon="download"
                     onClick={() => { void run(async () => { downloadProject(await store.exportProject(item.id)) }) }}
                   />
                   <RowAction
-                    label="删除"
+                    label={t('project.delete')}
                     icon="trash"
                     onClick={() => { void run(() => store.removeProject(item.id)) }}
                   />
@@ -160,7 +162,7 @@ export function ProjectPanel({
       </div>
 
       <div className="dsyn-menu-rule" />
-      <div className="dsyn-menu-title">新建</div>
+      <div className="dsyn-menu-title">{t('project.newSection')}</div>
       <div className="dsyn-project-new">
         <button
           type="button"
@@ -171,14 +173,14 @@ export function ProjectPanel({
             void run(() => store.newProject(true))
           }}
         >
-          空白工程
+          {t('project.blank')}
         </button>
         {SONG_PRESETS.map((preset) => (
           <button
             key={preset.id}
             type="button"
             className="dsyn-btn is-small"
-            title={`示范曲 · ${preset.bpm} BPM`}
+            title={t('project.demoTitle', { bpm: preset.bpm })}
             onClick={() => {
               close()
               void run(async () => {
@@ -187,7 +189,7 @@ export function ProjectPanel({
               })
             }}
           >
-            {preset.title}
+            {songPresetTitle(preset)}
           </button>
         ))}
         <button
@@ -201,17 +203,17 @@ export function ProjectPanel({
             })
           }}
         >
-          随机生成
+          {t('project.random')}
         </button>
       </div>
 
       <div className="dsyn-menu-rule" />
-      <div className="dsyn-menu-title">导出当前工程</div>
+      <div className="dsyn-menu-title">{t('project.exportSection')}</div>
       <div className="dsyn-project-new">
         <button
           type="button"
           className="dsyn-btn is-small"
-          title="标准 MIDI 文件，每条音轨一轨，可以拖进其他音乐软件"
+          title={t('project.midiTitle')}
           onClick={() => {
             void run(async () => {
               const project = await store.exportProject(currentId)
@@ -225,7 +227,7 @@ export function ProjectPanel({
           type="button"
           className="dsyn-btn is-small"
           disabled={rendering}
-          title="把循环渲染一遍成音频文件，和播放听到的一致"
+          title={t('project.wavTitle')}
           onClick={() => {
             setRendering(true)
             void run(async () => {
@@ -238,7 +240,7 @@ export function ProjectPanel({
             })
           }}
         >
-          {rendering ? '渲染中…' : '音频 WAV'}
+          {rendering ? t('project.rendering') : t('project.wav')}
         </button>
       </div>
 
@@ -251,7 +253,7 @@ export function ProjectPanel({
           onClick={() => { fileInput.current?.click() }}
         >
           <Icon name="upload" size={14} />
-          导入文件…
+          {t('project.import')}
         </button>
         <span className="dsyn-caption">{all.length} / {MAX_PROJECTS}</span>
         <input

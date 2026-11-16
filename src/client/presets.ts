@@ -23,6 +23,7 @@ import {
   type Project,
   type SynthPatch,
 } from '../model.ts'
+import { t, type MessageKey } from './i18n.ts'
 import { DEFAULT_SYNTH_PATCHES } from './instruments.ts'
 
 export interface SynthPresetItem {
@@ -1732,7 +1733,7 @@ export function generateRandomGrooveProject(id = createProjectId()): Project {
   return {
     version: 1,
     id,
-    name: `随机灵感 · ${rootName} ${scaleId.toUpperCase()}`,
+    name: t('song.randomName', { root: rootName, scale: scaleId.toUpperCase() }),
     bpm,
     beatsPerBar: BEATS_PER_BAR,
     bars: 4,
@@ -1743,7 +1744,7 @@ export function generateRandomGrooveProject(id = createProjectId()): Project {
     tracks: [
       {
         id: 'drums',
-        name: '鼓',
+        name: t('track.drums'),
         instrumentId: 'drums',
         mute: false,
         gain: 0.84,
@@ -1752,7 +1753,7 @@ export function generateRandomGrooveProject(id = createProjectId()): Project {
       },
       {
         id: 'bass',
-        name: bassInst === 'acid' ? '酸液' : '贝斯',
+        name: bassInst === 'acid' ? t('track.acid') : t('track.bass'),
         instrumentId: bassInst,
         mute: false,
         gain: 0.82,
@@ -1761,7 +1762,7 @@ export function generateRandomGrooveProject(id = createProjectId()): Project {
       },
       {
         id: 'keys',
-        name: '和弦',
+        name: t('track.chords'),
         instrumentId: 'pad',
         mute: false,
         gain: 0.64,
@@ -1770,7 +1771,7 @@ export function generateRandomGrooveProject(id = createProjectId()): Project {
       },
       {
         id: 'lead',
-        name: '主旋律',
+        name: t('track.lead'),
         instrumentId: leadInst,
         mute: false,
         gain: 0.74,
@@ -1779,4 +1780,46 @@ export function generateRandomGrooveProject(id = createProjectId()): Project {
       },
     ],
   }
+}
+
+export function presetLabel(preset: { id: string; label: string }): string {
+  const key = `preset.${preset.id}` as MessageKey
+  const translated = t(key)
+  return translated === key ? preset.label : translated
+}
+
+export function presetDescription(preset: { id: string; description: string }): string {
+  const key = `preset.${preset.id}.desc` as MessageKey
+  const translated = t(key)
+  return translated === key ? preset.description : translated
+}
+
+export function scaleName(scale: { id: string; name: string }): string {
+  const key = `scale.${scale.id}` as MessageKey
+  const translated = t(key)
+  return translated === key ? scale.name : translated
+}
+
+export function drumPatternLabel(pattern: { id: string; label: string }): string {
+  const key = `pattern.drum.${pattern.id}` as MessageKey
+  const translated = t(key)
+  return translated === key ? pattern.label : translated
+}
+
+export function chordProgressionLabel(prog: { id: string; label: string }): string {
+  const key = `prog.${prog.id}` as MessageKey
+  const translated = t(key)
+  return translated === key ? prog.label : translated
+}
+
+export function melodicPatternLabel(pattern: { id: string; label: string }): string {
+  const key = `pattern.mel.${pattern.id}` as MessageKey
+  const translated = t(key)
+  return translated === key ? pattern.label : translated
+}
+
+export function songPresetTitle(preset: { id: string; title: string }): string {
+  const key = `song.${preset.id}` as MessageKey
+  const translated = t(key)
+  return translated === key ? preset.title : translated
 }

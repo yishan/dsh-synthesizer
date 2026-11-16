@@ -1,5 +1,6 @@
 /** Optional Web MIDI input: plug-and-play note routing for external MIDI keyboards. */
 import { PITCH_MAX, PITCH_MIN } from '../model.ts'
+import { t } from './i18n.ts'
 
 export type MidiNoteEvent =
   | { type: 'noteOn'; pitch: number; velocity: number }
@@ -48,7 +49,7 @@ export function connectMidiInput(
     const names: string[] = []
     for (const input of access.inputs.values()) {
       if (input.state === 'connected') {
-        names.push(input.name?.trim() || 'MIDI 设备')
+        names.push(input.name?.trim() || t('midi.defaultDevice'))
       }
       input.onmidimessage = (msg) => {
         if (disposed || msg.data === null) return

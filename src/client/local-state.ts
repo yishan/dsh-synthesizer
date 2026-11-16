@@ -8,8 +8,11 @@ const VIEW_PREFIX = 'dsh-synthesizer:view:'
 const SETTINGS_KEY = 'dsh-synthesizer:settings'
 
 export type SidechainStrength = 'off' | 'normal' | 'strong'
+export type Locale = 'zh-CN' | 'en'
+export type LocaleSetting = 'auto' | Locale
 
 export interface SynthSettings {
+  locale: LocaleSetting
   showSidebarTransport: boolean
   sidebarTipDismissed: boolean
   backgroundPlayback: boolean
@@ -22,6 +25,7 @@ export interface SynthSettings {
 }
 
 const DEFAULT_SETTINGS: SynthSettings = {
+  locale: 'auto',
   showSidebarTransport: true,
   sidebarTipDismissed: false,
   backgroundPlayback: true,
@@ -105,6 +109,10 @@ function normalizeSidechainStrength(value: unknown, fallback: SidechainStrength)
   return value === 'off' || value === 'normal' || value === 'strong' ? value : fallback
 }
 
+function normalizeLocale(value: unknown, fallback: LocaleSetting): LocaleSetting {
+  return value === 'auto' || value === 'zh-CN' || value === 'en' ? value : fallback
+}
+
 export function loadSettings(): SynthSettings {
   const defaults = { ...DEFAULT_SETTINGS }
   try {
@@ -112,6 +120,7 @@ export function loadSettings(): SynthSettings {
     if (raw === null || raw === undefined) return defaults
     const parsed = JSON.parse(raw) as Record<string, unknown>
     return {
+      locale: normalizeLocale(parsed.locale, defaults.locale),
       showSidebarTransport: typeof parsed.showSidebarTransport === 'boolean'
         ? parsed.showSidebarTransport
         : defaults.showSidebarTransport,
@@ -146,6 +155,9 @@ export function saveSettings(patch: Partial<SynthSettings>): SynthSettings {
   const next: SynthSettings = {
     ...current,
     ...patch,
+    locale: patch.locale !== undefined
+      ? normalizeLocale(patch.locale, current.locale)
+      : current.locale,
     masterVolume: patch.masterVolume !== undefined
       ? normalizeMasterVolume(patch.masterVolume, current.masterVolume)
       : current.masterVolume,

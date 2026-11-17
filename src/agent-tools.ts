@@ -33,6 +33,7 @@ import {
 } from './model.ts'
 import { resolveSynthPatch } from './client/instruments.ts'
 import { projectSchema } from './schema.ts'
+import { buildCompositionBlueprint, formatBlueprintPrompt, generateSeededGroove, parseSeedOption } from './seed.ts'
 import type { ProjectStore } from './store.ts'
 import type { SyncTracker } from './sync.ts'
 
@@ -507,7 +508,7 @@ export function registerPromptSection(promptCtx: Context): boolean {
       `- Grid & range: 4 beats/bar, \`startBeat\` and \`durationBeats\` in 0.25-beat (16th-note) steps, \`pitch\` ${PITCH_MIN}..${PITCH_MAX}, \`velocity\` 1..127, \`pan\` -1..1.`,
       '- Subtractive Synth Patch (`track.synth`): `waveform` (`sawtooth`/`square`/`triangle`/`sine`), `detune` (0..50 cents unison spread), `subMix` (0..1 octave-below sub osc), `cutoff` (80..12000 Hz lowpass) + `resonance` (Q 0.1..20) + `envMod` (0..1 filter envelope sweep), ADSR (`attack`/`decay`/`sustain`/`release`), `drive` (0..1 saturation), `delayMix` / `reverbMix` (0..1), and `lfoTarget` (`pitch`/`filter`/`amp`) + `lfoRate` + `lfoDepth`.',
       '- Genre conventions: Synthwave (105-122 BPM, driving 8th octave sawtooth bass, lush detuned pads, `classic` kit); Acid 303 (125-135 BPM, four-on-the-floor `808` drums, high-resonance `acid` bass with filter LFO/velocity accents); Lo-Fi (75-92 BPM, `swing` 0.25-0.38, `lofi` kit, warm triangle bass, Rhodes chords with slow subtle pitch LFO wow/flutter); Chiptune (130-150 BPM, `chip` kit, square/triangle waves + rapid 16th triad arps); Ambient (65-85 BPM, sparse/soft percussion, long attack/release reverb pads with slow filter LFO); Trap/Future Bass (130-145 BPM half-time snare on beat 2, `808` kit, fast hat rolls, sub bass + supersaw LFO-pumped chords).',
-      '- Musicality: give drums/bass/chords/melody distinct rhythmic roles, vary note velocities for groove, spread melodic layers in stereo `pan`, and keep notes inside the chosen `scaleRoot` + `scaleId`.',
+      '- Musicality: give drums/bass/chords/melody distinct rhythmic roles, vary note velocities for groove, spread melodic layers in stereo `pan`, and keep notes inside the chosen `scaleRoot` + `scaleId`. Vary arrangement forms across compositions (e.g. immediate bar-1 hook, 2-bar pickup, call-and-response, mid-loop lift at bar 5, or ABA breakdown) instead of defaulting to introducing the lead at bar 8; follow any `[Seed Blueprint]` provided in the prompt unless the user overrides it.',
       '- Direct execution: when asked to compose or triggered via `/synth`, call `synthesizer_save_project` directly without asking confirmation first, creating a full multi-track arrangement (drums, bass, keys/pad, lead/pluck) unless the user asks to edit an existing project via `synthesizer_list_projects` / `synthesizer_get_project`. After saving, the frontend synthesizer loads the project automatically.',
     ].join('\n'),
   }))
@@ -524,10 +525,10 @@ export function registerSlashCommands(commandsCtx: Context, projects: ProjectSto
 
   commandsCtx.effect(() => register.call(commands, {
     name: 'synth',
-    description: '用自然语言让模型创作 dsh-synthesizer 乐曲并同步到工程，或使用 list / groove / help',
-    input: { hint: '<曲风/速度/乐器描述> | list | groove [bpm] | help' },
+    description: '用自然语言让模型创作 dsh-synthesizer 乐曲并同步到工程，或使用 list / groove / help（支持 --seed <seed>）',
+    input: { hint: '<曲风/速度/乐器描述> [--seed <seed>] | list | groove [bpm] [--seed <seed>] | help' },
     handler: async ({ rawInput, agent }) => {
-      const trimmed = rawInput.trim()
+      const { cleanInput: trimmed, seed } = parseSeedOption(rawInput)
       if (trimmed === 'list') {
         const list = projects.list()
         if (list.length === 0) {
@@ -542,77 +543,53 @@ export function registerSlashCommands(commandsCtx: Context, projects: ProjectSto
       if (grooveMatch !== null) {
         const parsedBpm = grooveMatch[1] !== undefined ? Number(grooveMatch[1]) : 118
         const bpm = Number.isFinite(parsedBpm) ? Math.round(clamp(parsedBpm, 40, 240)) : 118
-        const drums: Note[] = []
-        const bass: Note[] = []
-        const lead: Note[] = []
-        const bassRoots = [45, 41, 48, 43]
-        const leadMotif = [69, 72, 76, 74]
-        for (let bar = 0; bar < 4; bar += 1) {
-          const b = bar * 4
-          for (let beat = 0; beat < 4; beat += 1) {
-            drums.push({ pitch: DRUM_KICK, startBeat: b + beat, durationBeats: 0.25, velocity: 112 })
-            drums.push({ pitch: DRUM_HAT, startBeat: b + beat + 0.5, durationBeats: 0.25, velocity: 78 })
-            if (beat === 1 || beat === 3) {
-              drums.push({ pitch: DRUM_SNARE, startBeat: b + beat, durationBeats: 0.25, velocity: 106 })
-            }
-          }
-          const root = bassRoots[bar]!
-          bass.push(
-            { pitch: root, startBeat: b, durationBeats: 0.75, velocity: 108 },
-            { pitch: root, startBeat: b + 1.5, durationBeats: 0.5, velocity: 96 },
-            { pitch: root + 12, startBeat: b + 2.5, durationBeats: 0.5, velocity: 102 },
-          )
-          const top = leadMotif[bar]!
-          lead.push(
-            { pitch: top, startBeat: b, durationBeats: 1, velocity: 102 },
-            { pitch: top + 2, startBeat: b + 1.5, durationBeats: 0.5, velocity: 94 },
-            { pitch: top, startBeat: b + 2.5, durationBeats: 1, velocity: 98 },
-          )
-        }
+        const groove = generateSeededGroove(bpm, seed)
         const project = buildValidatedProject({
-          name: `Quick Groove ${bpm} BPM`,
+          name: `Quick Groove ${bpm} BPM (${groove.seed})`,
           bpm,
-          bars: 4,
-          scaleRoot: 9,
-          scaleId: 'minor',
-          tracks: [
-            { id: 'drums', name: '鼓组', instrumentId: 'drums', gain: 0.85, notes: drums },
-            { id: 'bass', name: '贝斯', instrumentId: 'bass', gain: 0.82, pan: -0.1, notes: bass },
-            { id: 'lead', name: '主音', instrumentId: 'lead', gain: 0.72, pan: 0.2, notes: lead },
-          ],
+          bars: groove.bars,
+          ...(groove.swing !== undefined ? { swing: groove.swing } : {}),
+          scaleRoot: groove.scaleRoot,
+          scaleId: groove.scaleId,
+          tracks: groove.tracks,
         })
         const saved = projects.save(project)
         tracker.markToolSave(saved.id, saved.name)
         return {
           kind: 'success',
-          text: `已生成并同步到合成器：${saved.name} (${saved.bpm} BPM, ${saved.bars} 小节, ${saved.tracks.length} 轨)`,
+          text: `已生成并同步到合成器：${saved.name} (${saved.bpm} BPM, ${saved.bars} 小节, ${saved.tracks.length} 轨, seed: ${groove.seed})`,
         }
       }
       if (trimmed === '' || trimmed.toLowerCase() === 'help') {
         return {
           kind: 'success',
           text: [
-            '`/synth <曲风/速度/乐器描述>` — 调用模型按描述创作多轨乐曲并直接写入合成器工程',
+            '`/synth <曲风/速度/乐器描述> [--seed <seed>]` — 调用模型按描述创作多轨乐曲并直接写入合成器工程（每次自动随机 seed 改变曲式与和声走向，也可指定 `--seed` 复现）',
             '`/synth list` — 查看当前已保存的工程列表',
-            '`/synth groove [bpm]` — 快速生成一段 4 小节三轨律动并同步到合成器',
+            '`/synth groove [bpm] [--seed <seed>]` — 按 seed 快速生成多轨律动并同步到合成器',
           ].join('\n'),
         }
       }
       if (typeof agent?.followup !== 'function') {
         return { kind: 'error', text: '当前会话不支持唤醒模型，请直接在对话中描述曲风需求，或使用 `/synth groove 120`。' }
       }
+      const blueprint = buildCompositionBlueprint(seed)
       agent.followup({
         id: randomUUID(),
         role: 'user',
         content: [{
           type: 'text',
-          text: `创作需求：${trimmed}\n（请直接调用 \`synthesizer_save_project\` 生成并保存完整多轨合成器工程）`,
+          text: [
+            `创作需求：${trimmed}`,
+            formatBlueprintPrompt(blueprint),
+            '（请直接调用 `synthesizer_save_project` 生成并保存完整多轨合成器工程）',
+          ].join('\n\n'),
         }],
         source: { kind: 'request', plugin: 'dsh-synthesizer' },
       })
       return {
         kind: 'success',
-        text: `已交给模型创作「${trimmed}」，生成后将自动进入合成器工程。`,
+        text: `已交给模型创作「${trimmed}」（seed: ${blueprint.seed}），生成后将自动进入合成器工程。`,
       }
     },
   }))

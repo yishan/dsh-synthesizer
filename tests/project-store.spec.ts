@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Project } from '../src/schema.ts'
+import { isTrackAudible } from '../src/model.ts'
 import { saveProject } from '../src/client/api.ts'
 import { DEFAULT_SYNTH_PATCHES } from '../src/client/instruments.ts'
 import {
@@ -662,5 +663,37 @@ describe('project client', () => {
     await sanitized.hydrate()
     expect(sanitized.getState().masterVolume).toBe(0)
     expect(sanitized.getState().sidechainStrength).toBe('normal')
+  })
+
+  it('keeps solo exclusive across tracks so soloing track B clears solo on track A', async () => {
+    installHost()
+    const client = new ProjectClient()
+    await client.newProject(true)
+    const tracks = () => client.getState().project.tracks
+    const [a, b, c] = tracks()
+    if (a === undefined || b === undefined || c === undefined) throw new Error('expected at least 3 tracks')
+
+    client.updateTrack(a.id, { solo: true })
+    expect(tracks()[0]?.solo).toBe(true)
+    expect(tracks()[1]?.solo).toBeUndefined()
+    expect(isTrackAudible(tracks()[0]!, tracks())).toBe(true)
+    expect(isTrackAudible(tracks()[1]!, tracks())).toBe(false)
+    expect(isTrackAudible(tracks()[2]!, tracks())).toBe(false)
+
+    // Soloing B must clear A's solo so A becomes muted by solo instead of staying solo-active.
+    client.updateTrack(b.id, { solo: true })
+    expect(tracks()[0]?.solo).toBeUndefined()
+    expect(tracks()[1]?.solo).toBe(true)
+    expect(tracks()[2]?.solo).toBeUndefined()
+    expect(isTrackAudible(tracks()[0]!, tracks())).toBe(false)
+    expect(isTrackAudible(tracks()[1]!, tracks())).toBe(true)
+    expect(isTrackAudible(tracks()[2]!, tracks())).toBe(false)
+
+    // Unsoloing B restores audibility for all unmuted tracks.
+    client.updateTrack(b.id, { solo: undefined })
+    expect(tracks().every((t) => t.solo === undefined)).toBe(true)
+    expect(isTrackAudible(tracks()[0]!, tracks())).toBe(true)
+    expect(isTrackAudible(tracks()[1]!, tracks())).toBe(true)
+    expect(isTrackAudible(tracks()[2]!, tracks())).toBe(true)
   })
 })

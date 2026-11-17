@@ -215,5 +215,43 @@ describe('agent tools & prompt integration', () => {
 
     const noAgentRes = await registeredHandler!({ rawInput: '写一首 124 BPM 的 Synthwave 伴奏' })
     expect(noAgentRes.kind).toBe('error')
+
+    // Explicit --seed is forwarded as a deterministic blueprint and stripped from the user request line
+    const seededRes = await registeredHandler!({
+      rawInput: '写一首赛博朋克 --seed alpha99',
+      agent: { followup: (msg) => { followups.push(msg) } },
+    })
+    expect(seededRes.kind).toBe('success')
+    expect(seededRes.text).toContain('seed: alpha99')
+    const seededText = followups.at(-1)?.content[0]?.text ?? ''
+    expect(seededText).toContain('创作需求：写一首赛博朋克\n')
+    expect(seededText).toContain('[Seed Blueprint | seed=alpha99]')
+
+    // Same seed produces the exact same blueprint; a different seed produces a different blueprint
+    await registeredHandler!({
+      rawInput: '写一首赛博朋克 --seed alpha99',
+      agent: { followup: (msg) => { followups.push(msg) } },
+    })
+    await registeredHandler!({
+      rawInput: '写一首赛博朋克 --seed beta77',
+      agent: { followup: (msg) => { followups.push(msg) } },
+    })
+    expect(followups.at(-2)?.content[0]?.text).toBe(seededText)
+    expect(followups.at(-1)?.content[0]?.text).not.toBe(seededText)
+
+    // Seeded groove reproduces identically for the same seed and varies across different seeds
+    await registeredHandler!({ rawInput: 'groove 124 --seed g1' })
+    await registeredHandler!({ rawInput: 'groove 124 --seed g1' })
+    await registeredHandler!({ rawInput: 'groove 124 --seed g2' })
+    const allSaved = store.list()
+    const g1Projects = allSaved.filter((p) => p.name === 'Quick Groove 124 BPM (g1)')
+    const g2Project = allSaved.find((p) => p.name === 'Quick Groove 124 BPM (g2)')
+    expect(g1Projects).toHaveLength(2)
+    expect(g2Project).toBeDefined()
+    const g1A = store.read(g1Projects[0]!.id)
+    const g1B = store.read(g1Projects[1]!.id)
+    const g2 = store.read(g2Project!.id)
+    expect(g1A.tracks).toEqual(g1B.tracks)
+    expect(g1A.scaleRoot !== g2.scaleRoot || g1A.scaleId !== g2.scaleId || g1A.tracks[0]?.notes.length !== g2.tracks[0]?.notes.length).toBe(true)
   })
 })

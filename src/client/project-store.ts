@@ -265,33 +265,42 @@ export class ProjectClient {
   }
 
   updateTrack(trackId: string, patch: Partial<Pick<Track, 'name' | 'instrumentId' | 'mute' | 'solo' | 'gain' | 'pan' | 'synth'>>): void {
-    this.mapTrack(trackId, (track) => {
-      const nextInstrument = patch.instrumentId ?? track.instrumentId
-      let nextSynth = patch.synth !== undefined ? patch.synth : track.synth
-      if (patch.instrumentId !== undefined && patch.instrumentId !== track.instrumentId && patch.synth === undefined) {
-        nextSynth = patch.instrumentId === 'drums' ? undefined : DEFAULT_SYNTH_PATCHES[nextInstrument]
-      }
-      const updated: Track = {
-        ...track,
-        ...patch,
-      }
-      if ('solo' in patch && patch.solo !== true) {
-        delete updated.solo
-      }
-      if ('pan' in patch && (patch.pan === undefined || Math.abs(patch.pan) < 0.01)) {
-        delete updated.pan
-      }
-      // A track still carrying its automatic name is renamed along with its instrument.
-      if (patch.name === undefined && nextInstrument !== track.instrumentId && hasAutoName(track)) {
-        const others = this.state.project.tracks.filter((item) => item.id !== trackId).map((item) => item.name)
-        updated.name = uniqueName(defaultTrackName(nextInstrument), others)
-      }
-      if (nextSynth !== undefined && nextInstrument !== 'drums') {
-        updated.synth = nextSynth
-      } else {
-        delete updated.synth
-      }
-      return updated
+    const exclusiveSolo = patch.solo === true
+    this.commit({
+      ...this.state.project,
+      tracks: this.state.project.tracks.map((track) => {
+        if (track.id !== trackId) {
+          if (!exclusiveSolo || track.solo !== true) return track
+          const { solo: _removed, ...rest } = track
+          return rest
+        }
+        const nextInstrument = patch.instrumentId ?? track.instrumentId
+        let nextSynth = patch.synth !== undefined ? patch.synth : track.synth
+        if (patch.instrumentId !== undefined && patch.instrumentId !== track.instrumentId && patch.synth === undefined) {
+          nextSynth = patch.instrumentId === 'drums' ? undefined : DEFAULT_SYNTH_PATCHES[nextInstrument]
+        }
+        const updated: Track = {
+          ...track,
+          ...patch,
+        }
+        if ('solo' in patch && patch.solo !== true) {
+          delete updated.solo
+        }
+        if ('pan' in patch && (patch.pan === undefined || Math.abs(patch.pan) < 0.01)) {
+          delete updated.pan
+        }
+        // A track still carrying its automatic name is renamed along with its instrument.
+        if (patch.name === undefined && nextInstrument !== track.instrumentId && hasAutoName(track)) {
+          const others = this.state.project.tracks.filter((item) => item.id !== trackId).map((item) => item.name)
+          updated.name = uniqueName(defaultTrackName(nextInstrument), others)
+        }
+        if (nextSynth !== undefined && nextInstrument !== 'drums') {
+          updated.synth = nextSynth
+        } else {
+          delete updated.synth
+        }
+        return updated
+      }),
     }, `track:${trackId}:${Object.keys(patch).join(',')}`)
   }
 

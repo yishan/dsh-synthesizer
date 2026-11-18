@@ -35,6 +35,7 @@ export class Engine {
   private reported = new Set<string>()
   private signature = ''
   private projectId = ''
+  private resuming = false
   private unsubscribeStore: (() => void) | undefined
 
   constructor(private readonly store: ProjectClient) {
@@ -224,23 +225,38 @@ export class Engine {
     if (!restart && this.cursor !== undefined && this.audio !== undefined) {
       const loopBeats = project.bars * project.beatsPerBar
       const beat = (this.audio.currentTime - this.cursor.origin) / (60 / project.bpm)
-      this.pausedBeat = ((beat % loopBeats) + loopBeats) % loopBeats
+      if (Number.isFinite(beat) && loopBeats > 0) {
+        this.pausedBeat = ((beat % loopBeats) + loopBeats) % loopBeats
+      }
     } else if (restart) {
       this.pausedBeat = 0
     }
     if (this.timer !== undefined) clearInterval(this.timer)
     this.timer = undefined
-    this.stopVoices(this.audio?.currentTime ?? 0)
-    this.cursor = undefined
-    this.store.setPlaying(false)
+    try {
+      this.stopVoices(this.audio?.currentTime ?? 0)
+    } finally {
+      this.voices = []
+      this.previews.clear()
+      this.cursor = undefined
+      this.store.setPlaying(false)
+    }
   }
 
   private tick(): void {
     const audio = this.audio
     const cursor = this.cursor
     if (audio === undefined || cursor === undefined) return
+    if (audio.state === 'closed') {
+      this.pause(false)
+      return
+    }
     const { project, playing } = this.store.getState()
     if (!playing) return
+    if (audio.state === 'suspended' && !this.resuming && typeof audio.resume === 'function') {
+      this.resuming = true
+      void Promise.resolve(audio.resume()).catch(() => {}).finally(() => { this.resuming = false })
+    }
     this.syncDelayTempo(project.bpm)
     const loopBeats = project.bars * project.beatsPerBar
     const loopEnd = cursor.origin + loopBeats * (60 / project.bpm)
@@ -265,11 +281,14 @@ export class Engine {
     }
     const now = audio.currentTime
     this.voices = this.voices.filter((voice) => now < voice.stopTime + 0.5)
+    if (this.voices.length > 512) {
+      this.voices = this.voices.slice(-256)
+    }
   }
 
   private syncLiveVoices(): void {
     const audio = this.audio
-    if (audio === undefined) return
+    if (audio === undefined || audio.state === 'closed') return
     this.applyMute()
     const now = audio.currentTime
     const state = this.store.getState()
@@ -285,12 +304,20 @@ export class Engine {
       const patch = resolveSynthPatch(track.instrumentId, track.synth)
       for (const voice of this.voices) {
         if (voice.trackId === track.id && now < voice.stopTime) {
-          voice.note.updatePatch?.(patch, now)
+          try {
+            voice.note.updatePatch?.(patch, now)
+          } catch {
+            /* Ignore stale voices while updating patches. */
+          }
         }
       }
       for (const entry of this.previews.values()) {
         if (entry.trackId === track.id) {
-          entry.voice.updatePatch?.(patch, now)
+          try {
+            entry.voice.updatePatch?.(patch, now)
+          } catch {
+            /* Ignore stale preview voices while updating patches. */
+          }
         }
       }
     }
@@ -299,6 +326,13 @@ export class Engine {
   private ensure(): AudioContext | undefined {
     const Constructor = globalThis.AudioContext
     if (Constructor === undefined) return undefined
+    if (this.audio !== undefined && this.audio.state === 'closed') {
+      this.audio = undefined
+      this.mix = undefined
+      this.voices = []
+      this.previews.clear()
+      this.cursor = undefined
+    }
     if (this.audio === undefined) {
       this.audio = new Constructor({ latencyHint: 'interactive' })
       this.mix = createMixGraph(this.audio, this.audio.destination)
@@ -324,9 +358,21 @@ export class Engine {
   }
 
   private stopVoices(when: number): void {
-    for (const voice of this.voices) voice.note.stop(when)
+    for (const voice of this.voices) {
+      try {
+        voice.note.stop(when)
+      } catch {
+        /* Ignore already-stopped or invalid voices so pause never aborts. */
+      }
+    }
     this.voices = []
-    for (const entry of this.previews.values()) entry.voice.stop(when)
+    for (const entry of this.previews.values()) {
+      try {
+        entry.voice.stop(when)
+      } catch {
+        /* Ignore already-stopped preview voices. */
+      }
+    }
     this.previews.clear()
   }
 

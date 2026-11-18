@@ -305,6 +305,25 @@ function silence(): ScheduledNote {
   return { stop() {} }
 }
 
+function disconnectOnEnded(
+  source: AudioScheduledSourceNode,
+  nodes: readonly (AudioNode | undefined)[],
+): void {
+  try {
+    source.onended = () => {
+      for (const node of nodes) {
+        try {
+          node?.disconnect()
+        } catch {
+          /* Already disconnected. */
+        }
+      }
+    }
+  } catch {
+    /* Some minimal test doubles do not allow assigning onended. */
+  }
+}
+
 export function midiHz(pitch: number): number {
   return 440 * 2 ** ((pitch - 69) / 12)
 }
@@ -475,6 +494,9 @@ function tone(
   }
 
   voiceOut.connect(out)
+  if (unisonOscs[0] !== undefined) {
+    disconnectOnEnded(unisonOscs[0], [voiceOut, gain, tremolo, shaper, filter, subGain, lfoGain])
+  }
   let scheduledStop: number | undefined
 
   return {
@@ -607,16 +629,18 @@ function noiseHit(
   const peak = amplitude(velocity)
   gain.gain.setValueAtTime(peak, time)
   gain.gain.exponentialRampToValueAtTime(0.001, time + decay)
+  let filter: BiquadFilterNode | undefined
   if (highpass === null) {
     source.connect(gain)
   } else {
-    const filter = ctx.createBiquadFilter()
+    filter = ctx.createBiquadFilter()
     filter.type = 'highpass'
     filter.frequency.setValueAtTime(highpass, time)
     source.connect(filter)
     filter.connect(gain)
   }
   gain.connect(out)
+  disconnectOnEnded(source, [gain, filter, source])
   source.start(time)
   source.stop(time + decay + 0.02)
   onGain?.(gain)
@@ -731,6 +755,7 @@ function sweepHit(ctx: AudioContext, out: AudioNode, time: number, velocity: num
   gain.gain.exponentialRampToValueAtTime(0.001, time + voice.decay)
   oscillator.connect(gain)
   gain.connect(out)
+  disconnectOnEnded(oscillator, [gain, oscillator])
   oscillator.start(time)
   oscillator.stop(time + voice.decay + 0.02)
   return RING_OUT

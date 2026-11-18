@@ -1,6 +1,8 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
+import { Engine } from '../src/client/engine.ts'
 import { DEFAULT_SYNTH_PATCHES, DRUM_KITS, drumPiece, getDrumKit, getInstrument, listInstruments } from '../src/client/instruments.ts'
 import { createMixGraph } from '../src/client/mix.ts'
+import { ProjectClient } from '../src/client/project-store.ts'
 import { SYNTH_PATCH_PRESETS, isPreset, presetsFor } from '../src/client/presets.ts'
 import { DRUM_PITCHES, synthPatchSchema } from '../src/schema.ts'
 import { auditionBase, auditionPitch } from '../src/client/audition.ts'
@@ -440,5 +442,100 @@ describe('instruments', () => {
     const strongRecover = duckBus?.gain.values.find((v) => v.method === 'exp' && v.time === 3.22)
     expect(strongDip?.value).toBeCloseTo(0.28, 2)
     expect(strongRecover?.value).toBe(1)
+  })
+
+  it('deduplicates unchanged AudioParam updates across repeated ticks and recovers Engine from closed/throwing audio', () => {
+    const created: Array<{ kind: string; gain: FakeParam; delayTime: FakeParam; connect: (t: unknown) => unknown }> = []
+    const makeNode = (kind: string) => {
+      const node = {
+        kind,
+        gain: param(),
+        pan: param(),
+        delayTime: param(),
+        frequency: param(),
+        Q: param(),
+        type: 'lowpass',
+        connect(target: unknown) { return target },
+      }
+      created.push(node)
+      return node
+    }
+    const ctx = {
+      currentTime: 0,
+      sampleRate: 44100,
+      createGain: () => makeNode('gain'),
+      createDelay: () => makeNode('delay'),
+      createBiquadFilter: () => makeNode('biquad'),
+    } as unknown as BaseAudioContext
+
+    const mix = createMixGraph(ctx, {} as AudioNode)
+    const master = created[0]!
+    const delay = created.find((n) => n.kind === 'delay')!
+
+    mix.setTempo(120)
+    mix.setTempo(120)
+    mix.setTempo(120)
+    expect(delay.delayTime.values).toHaveLength(1)
+
+    mix.setMasterVolume?.(0.8)
+    mix.setMasterVolume?.(0.8)
+    mix.setMuted(false)
+    expect(master.gain.values).toHaveLength(2)
+
+    mix.input('lead-1', 0.7, DEFAULT_SYNTH_PATCHES.lead, 0, 'lead')
+    const dryBus = created.filter((n) => n.kind === 'gain').at(-3)!
+    const countAfterFirst = dryBus.gain.values.length
+    mix.input('lead-1', 0.7, DEFAULT_SYNTH_PATCHES.lead, 0, 'lead')
+    mix.input('lead-1', 0.7, DEFAULT_SYNTH_PATCHES.lead, 0, 'lead')
+    expect(dryBus.gain.values).toHaveLength(countAfterFirst)
+
+    // Engine recovery: closed AudioContext & throwing voice.stop()
+    let audioState: AudioContextState = 'running'
+    let ctorCalls = 0
+    const FakeAudioContext = vi.fn(() => {
+      ctorCalls += 1
+      audioState = 'running'
+      return {
+        get state() { return audioState },
+        currentTime: 0,
+        sampleRate: 44100,
+        destination: {},
+        resume: vi.fn(async () => { audioState = 'running' }),
+        close: vi.fn(async () => { audioState = 'closed' }),
+        createGain: () => makeNode('gain'),
+        createBiquadFilter: () => makeNode('biquad'),
+        createOscillator: () => ({
+          type: 'sine',
+          frequency: param(),
+          detune: param(),
+          connect: () => {},
+          start: () => {},
+          stop: () => { throw new Error('already stopped') },
+        }),
+      }
+    })
+    vi.stubGlobal('AudioContext', FakeAudioContext)
+    try {
+      const store = new ProjectClient()
+      const engine = new Engine(store)
+      engine.togglePlay()
+      expect(store.getState().playing).toBe(true)
+      expect(ctorCalls).toBe(1)
+
+      // Even if a voice throws on stop, pause completes and resets playing=false
+      engine.previewDown('lead', 60)
+      engine.togglePlay()
+      expect(store.getState().playing).toBe(false)
+
+      // If AudioContext closed while idle, next togglePlay recreates it cleanly
+      audioState = 'closed'
+      engine.togglePlay()
+      expect(ctorCalls).toBe(2)
+      expect(store.getState().playing).toBe(true)
+
+      engine.dispose()
+    } finally {
+      vi.unstubAllGlobals()
+    }
   })
 })

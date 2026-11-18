@@ -30,6 +30,10 @@ interface TrackBus {
   panner: StereoPannerNode | undefined
   delaySend: GainNode
   reverbSend: GainNode
+  lastGain: number
+  lastPan: number
+  lastDelay: number
+  lastReverb: number
 }
 
 /** A plain algorithmic room: decaying stereo noise, darker towards the tail. */
@@ -128,8 +132,13 @@ export function createMixGraph(ctx: BaseAudioContext, destination: AudioNode): M
   let isMuted = false
   let userVolume = 1
   let sidechainStrength: SidechainStrength = 'normal'
+  let lastMasterGain = Number.NaN
+  let lastDelayTime = Number.NaN
   const applyMasterGain = (): void => {
-    master.gain.setValueAtTime(isMuted ? 0 : MASTER_LEVEL * userVolume, ctx.currentTime)
+    const next = isMuted ? 0 : MASTER_LEVEL * userVolume
+    if (Math.abs(next - lastMasterGain) < 1e-6) return
+    lastMasterGain = next
+    master.gain.setValueAtTime(next, ctx.currentTime)
   }
 
   return {
@@ -152,19 +161,43 @@ export function createMixGraph(ctx: BaseAudioContext, destination: AudioNode): M
           positioned.connect(reverbSend)
           reverbSend.connect(reverb)
         }
-        bus = { dry, panner, delaySend, reverbSend }
+        bus = {
+          dry,
+          panner,
+          delaySend,
+          reverbSend,
+          lastGain: Number.NaN,
+          lastPan: Number.NaN,
+          lastDelay: Number.NaN,
+          lastReverb: Number.NaN,
+        }
         buses.set(trackId, bus)
       }
-      bus.dry.gain.setValueAtTime(gain, ctx.currentTime)
-      if (bus.panner !== undefined) {
-        bus.panner.pan.setValueAtTime(Math.max(-1, Math.min(1, pan)), ctx.currentTime)
+      if (Math.abs(gain - bus.lastGain) >= 1e-6) {
+        bus.lastGain = gain
+        bus.dry.gain.setValueAtTime(gain, ctx.currentTime)
       }
-      bus.delaySend.gain.setValueAtTime((synth?.delayMix ?? 0) * 0.65, ctx.currentTime)
-      bus.reverbSend.gain.setValueAtTime(synth?.reverbMix ?? 0, ctx.currentTime)
+      const clampedPan = Math.max(-1, Math.min(1, pan))
+      if (bus.panner !== undefined && Math.abs(clampedPan - bus.lastPan) >= 1e-6) {
+        bus.lastPan = clampedPan
+        bus.panner.pan.setValueAtTime(clampedPan, ctx.currentTime)
+      }
+      const delayMix = (synth?.delayMix ?? 0) * 0.65
+      if (Math.abs(delayMix - bus.lastDelay) >= 1e-6) {
+        bus.lastDelay = delayMix
+        bus.delaySend.gain.setValueAtTime(delayMix, ctx.currentTime)
+      }
+      const reverbMix = synth?.reverbMix ?? 0
+      if (Math.abs(reverbMix - bus.lastReverb) >= 1e-6) {
+        bus.lastReverb = reverbMix
+        bus.reverbSend.gain.setValueAtTime(reverbMix, ctx.currentTime)
+      }
       return bus.dry
     },
     setTempo(bpm) {
       const dottedEighth = Math.max(0.08, Math.min(1.2, (60 / bpm) * 0.75))
+      if (Math.abs(dottedEighth - lastDelayTime) < 1e-6) return
+      lastDelayTime = dottedEighth
       delayL?.delayTime.setValueAtTime(dottedEighth, ctx.currentTime)
       delayR?.delayTime.setValueAtTime(dottedEighth, ctx.currentTime)
     },
@@ -181,14 +214,16 @@ export function createMixGraph(ctx: BaseAudioContext, destination: AudioNode): M
     },
     triggerSidechain(time, velocity = 100) {
       if (sidechainStrength === 'off') return
+      if (time < ctx.currentTime - 0.05) return
+      const at = Math.max(ctx.currentTime, time)
       const velNorm = Math.max(0.3, Math.min(1, velocity / 127))
       const dip = sidechainStrength === 'strong'
         ? Math.max(0.18, 1 - 0.72 * velNorm)
         : Math.max(0.38, 1 - 0.48 * velNorm)
-      const releaseEnd = sidechainStrength === 'strong' ? time + 0.22 : time + 0.16
-      duckBus.gain.cancelScheduledValues?.(time)
-      duckBus.gain.setValueAtTime(1, time)
-      duckBus.gain.linearRampToValueAtTime(dip, time + 0.008)
+      const releaseEnd = sidechainStrength === 'strong' ? at + 0.22 : at + 0.16
+      duckBus.gain.cancelScheduledValues?.(at)
+      duckBus.gain.setValueAtTime(1, at)
+      duckBus.gain.linearRampToValueAtTime(dip, at + 0.008)
       duckBus.gain.exponentialRampToValueAtTime?.(1, releaseEnd)
     },
   }

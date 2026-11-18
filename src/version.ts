@@ -1,2 +1,2 @@
 /** Package version. Keep aligned with package.json. */
-export const VERSION = '1.4.1'
+export const VERSION = '1.4.2'

@@ -173,22 +173,22 @@ export function createMixGraph(ctx: BaseAudioContext, destination: AudioNode): M
         }
         buses.set(trackId, bus)
       }
-      if (Math.abs(gain - bus.lastGain) >= 1e-6) {
+      if (Number.isNaN(bus.lastGain) || Math.abs(gain - bus.lastGain) >= 1e-6) {
         bus.lastGain = gain
         bus.dry.gain.setValueAtTime(gain, ctx.currentTime)
       }
       const clampedPan = Math.max(-1, Math.min(1, pan))
-      if (bus.panner !== undefined && Math.abs(clampedPan - bus.lastPan) >= 1e-6) {
+      if (bus.panner !== undefined && (Number.isNaN(bus.lastPan) || Math.abs(clampedPan - bus.lastPan) >= 1e-6)) {
         bus.lastPan = clampedPan
         bus.panner.pan.setValueAtTime(clampedPan, ctx.currentTime)
       }
       const delayMix = (synth?.delayMix ?? 0) * 0.65
-      if (Math.abs(delayMix - bus.lastDelay) >= 1e-6) {
+      if (Number.isNaN(bus.lastDelay) || Math.abs(delayMix - bus.lastDelay) >= 1e-6) {
         bus.lastDelay = delayMix
         bus.delaySend.gain.setValueAtTime(delayMix, ctx.currentTime)
       }
       const reverbMix = synth?.reverbMix ?? 0
-      if (Math.abs(reverbMix - bus.lastReverb) >= 1e-6) {
+      if (Number.isNaN(bus.lastReverb) || Math.abs(reverbMix - bus.lastReverb) >= 1e-6) {
         bus.lastReverb = reverbMix
         bus.reverbSend.gain.setValueAtTime(reverbMix, ctx.currentTime)
       }

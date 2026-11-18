@@ -495,7 +495,7 @@ function tone(
 
   voiceOut.connect(out)
   if (unisonOscs[0] !== undefined) {
-    disconnectOnEnded(unisonOscs[0], [voiceOut, gain, tremolo, shaper, filter, subGain, lfoGain])
+    disconnectOnEnded(unisonOscs[0], [voiceOut])
   }
   let scheduledStop: number | undefined
 
@@ -640,7 +640,7 @@ function noiseHit(
     filter.connect(gain)
   }
   gain.connect(out)
-  disconnectOnEnded(source, [gain, filter, source])
+  disconnectOnEnded(source, [gain])
   source.start(time)
   source.stop(time + decay + 0.02)
   onGain?.(gain)
@@ -755,7 +755,7 @@ function sweepHit(ctx: AudioContext, out: AudioNode, time: number, velocity: num
   gain.gain.exponentialRampToValueAtTime(0.001, time + voice.decay)
   oscillator.connect(gain)
   gain.connect(out)
-  disconnectOnEnded(oscillator, [gain, oscillator])
+  disconnectOnEnded(oscillator, [gain])
   oscillator.start(time)
   oscillator.stop(time + voice.decay + 0.02)
   return RING_OUT

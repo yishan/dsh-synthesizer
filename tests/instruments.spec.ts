@@ -482,12 +482,21 @@ describe('instruments', () => {
     mix.setMuted(false)
     expect(master.gain.values).toHaveLength(2)
 
-    mix.input('lead-1', 0.7, DEFAULT_SYNTH_PATCHES.lead, 0, 'lead')
+    mix.input('lead-1', 0.7, DEFAULT_SYNTH_PATCHES.lead, -0.3, 'lead')
     const dryBus = created.filter((n) => n.kind === 'gain').at(-3)!
-    const countAfterFirst = dryBus.gain.values.length
-    mix.input('lead-1', 0.7, DEFAULT_SYNTH_PATCHES.lead, 0, 'lead')
-    mix.input('lead-1', 0.7, DEFAULT_SYNTH_PATCHES.lead, 0, 'lead')
-    expect(dryBus.gain.values).toHaveLength(countAfterFirst)
+    const delaySend = created.filter((n) => n.kind === 'gain').at(-2)!
+    const reverbSend = created.filter((n) => n.kind === 'gain').at(-1)!
+    expect(dryBus.gain.values).toHaveLength(1)
+    expect(dryBus.gain.values[0]?.value).toBe(0.7)
+    expect(delaySend.gain.values).toHaveLength(1)
+    expect(delaySend.gain.values[0]?.value).toBeCloseTo((DEFAULT_SYNTH_PATCHES.lead?.delayMix ?? 0) * 0.65, 5)
+    expect(reverbSend.gain.values).toHaveLength(1)
+    expect(reverbSend.gain.values[0]?.value).toBe(0)
+    mix.input('lead-1', 0.7, DEFAULT_SYNTH_PATCHES.lead, -0.3, 'lead')
+    mix.input('lead-1', 0.7, DEFAULT_SYNTH_PATCHES.lead, -0.3, 'lead')
+    expect(dryBus.gain.values).toHaveLength(1)
+    expect(delaySend.gain.values).toHaveLength(1)
+    expect(reverbSend.gain.values).toHaveLength(1)
 
     // Engine recovery: closed AudioContext & throwing voice.stop()
     let audioState: AudioContextState = 'running'

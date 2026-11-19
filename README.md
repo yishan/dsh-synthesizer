@@ -1,44 +1,43 @@
 # dsh-synthesizer
 
-DeepSeek Harness 里的多轨合成器与口袋律动工作站（Groovebox）。在钢琴卷帘或 8 件套鼓机步进器上编曲，通过实时 Web Audio 减法合成器塑形音色并循环播放。切回对话后音乐在后台继续播放，侧栏底部可随时播放/暂停与静音。工程连同音色参数保存在当前 profile 的 `storages/dsh-synthesizer/projects/`。
+**English** | [简体中文](./README.zh-CN.md)
 
-## 界面
+A multi-track Web Audio synthesizer and pocket groovebox for DeepSeek Harness. Sketch beats and melodies on a piano roll or 8-piece drum sequencer, sculpt sounds with a real-time subtractive synth engine, and keep your loop playing in the background while you chat—complete with sidebar quick transport controls, AI-assisted `/synth` composition, and WAV/MIDI export. Projects and synth patches are persisted in your active profile under `storages/dsh-synthesizer/projects/`.
 
-页面分三层：顶栏（播放、速度、小节、工程）、左侧音轨列表、右侧当前音轨的网格。网格下方的抽屉有三个标签：
+## Interface & Workflow
 
-- **音色**：先选乐器（主音、贝斯、铺底、键盘、酸液、拨弦、红白机、星际铃），再选该乐器下的音色，每种乐器有 3 到 4 个；调过参数后显示"已调整"。下面是明亮度、咬字、厚度、空间四个宏旋钮，"全部参数"里是波形、失谐、低八度、过载、滤波器和 ADSR。鼓轨在这里选鼓组（电子鼓、808、磁带 Lo-Fi、8-Bit）并试听 8 个鼓件。
-- **编曲**：调式高亮、一键生成乐句（鼓轨 5 种节奏，旋律轨 5 种乐句）、升降八度、清空本轨。
-- **弹奏**：双八度屏幕琴键。先点一下网格，再用电脑键盘 `A–L` 弹奏，`Z/X` 切八度；打开"边弹边录"后，播放时弹的音会量化记入当前音轨。
+The workspace has three regions: a top bar (transport, BPM, bars, `×2` bar doubler, swing, loop, project menu, undo, help, settings), a left track list (with exclusive Solo `S`, Mute `M`, instrument selector, gain, and stereo pan), and the piano-roll / drum-grid editor on the right. Below the grid, a three-tab drawer holds:
 
-所有编辑都可以用 `⌘Z / Ctrl+Z` 撤销。
+- **Sound**: Choose one of 8 melodic instruments (`lead`, `bass`, `pad`, `keys`, `acid`, `pluck`, `chip`, `bell`) and pick from 3–4 curated patches per instrument (plus macro knobs for brightness, bite, thickness, and space, or full ADSR/filter/unison/sub/drive/LFO/delay/reverb parameters). On drum tracks, switch between 4 drum kits (`classic`, `808`, `lofi`, `chip`) and audition all 8 drum pieces.
+- **Compose**: Root & scale highlighting across 12 roots and 8 scales (`minor`, `major`, `dorian`, `mixolydian`, `phrygian`, `pentatonic`, `blues`, `chromatic`), chord brush (`single`, `triad`, `seventh`), instant pattern generators (5 drum patterns, 5 melodic patterns), Euclidean `E(5,16)` percussion, drum fills, scale snap, velocity humanization, octave shift, repeat first bar, and clear track.
+- **Play**: Two-octave on-screen keyboard, QWERTY keyboard play (`A–L`, `Z/X` octave shift), Web MIDI input support, and record-arm (`R`) to quantize live-played notes onto the grid during playback.
 
-## 工程
+All edits support undo (`⌘Z / Ctrl+Z`).
 
-点击顶栏的工程名打开工程面板：
+## AI Composition & `/synth` Command
 
-- **列表**：每个工程显示速度、小节数、音符数和修改时间，点击打开。悬停一行可以重命名（也可双击名称）、复制、导出为文件、删除。超过 8 个工程时出现搜索框。
-- **新建**：空白工程、7 首示范曲、随机生成。当前工程改动过时，示范曲会开成新工程，不会覆盖原作品。重名会自动加序号。
-- **导入**：读取导出的 `.dsh-synth.json`，总是作为新工程加入，不会覆盖现有工程。
-- **删除**：删除后 10 秒内可以在底部提示里撤销。
+`dsh-synthesizer` registers 4 host agent tools (`synthesizer_list_projects`, `synthesizer_get_project`, `synthesizer_save_project`, `synthesizer_update_track`), a `dsh-synthesizer:composition` system prompt section, and the `/synth` slash command:
 
-改动在 500ms 后自动保存，窗口隐藏或关闭时立即保存；保存失败时顶栏显示"未保存 · 重试"。再次打开时回到上次打开的工程。
+- `/synth <style/tempo/instrument prompt> [--seed <seed>]` — Ask the model to compose a multi-track arrangement directly into the synthesizer. Each run automatically generates a random seed (or uses your `--seed`) to vary song form, rhythm feel, key/scale, chord progression, bassline, and melodic contour.
+- `/synth groove [bpm] [--seed <seed>]` — Procedurally generate a seeded multi-track groove immediately without invoking the model.
+- `/synth list` — List saved synthesizer projects.
+- `/synth help` — Show command usage.
 
-每个工程是 profile 下的一个 JSON 文件，包含速度、小节、调式和每条音轨的音色与音符。选中的音轨、键盘八度这类界面状态只记在浏览器本地。上限是 32 个工程、每个 256KB。
+When an agent tool saves or updates a project, the browser editor syncs automatically (or shows a one-click banner if you have unsaved local edits).
 
-颜色跟随宿主的 `--dsw-alias-*` 主题变量，亮色和暗色主题都适配；样式集中在 `src/client/styles.ts`。
+## Projects, Settings & Export
 
-## 律动、力度与导出
+- **Project Panel**: Open, search (when > 8 projects), rename, duplicate, export/import (`.dsh-synth.json`), or delete (with 10-second undo toast). Includes **8 curated song presets** (*Synthwave '84*, *Lo-Fi Chillhop*, *Acid 303 Warehouse*, *Chiptune Adventure*, *Ambient Drift*, *Midnight Disco*, *Tape Sunset*, *Future 808*) plus a random groove generator. Up to 32 projects (256 KB each), auto-saved 500 ms after edits.
+- **Settings**: Switch UI language (`Auto` / `简体中文` / `English`), toggle the sidebar quick transport bar, toggle background playback when leaving the panel, adjust master volume and sidechain ducking (`Off` / `Normal` / `Strong`), toggle audition-on-draw, QWERTY piano, ghost notes, and oscilloscope, inspect connected MIDI devices, or reset settings.
+- **Export**: Export multi-track MIDI (drums on channel 10, swing baked into note timing) or offline-rendered WAV matching the live mix graph (excluding muted tracks).
 
-- **摇摆**：顶栏的"摇摆"把每拍里第二、第四个十六分音符往后推，0 到 60，33 是三连音的摇摆感。
-- **力度**：网格底部的力度条，每一步一根，上下拖动调整；同一步上的和弦一起变。音符颜色深浅对应力度。
-- **LFO 与效果**：音色的"全部参数"里有 LFO（作用于音高、滤波或音量）以及回声、混响两个发送量。
-- **导出**：工程面板底部可以把当前工程导出为 MIDI（每条音轨一轨，鼓在第 10 通道，摇摆已写入音符时间）或 WAV（离线渲染一遍循环加尾音，与播放一致，静音的音轨不包含在内）。
+## Synthesis Engine
 
-## 合成引擎
+Each melodic track runs a real-time Web Audio subtractive synthesizer: oscillator waveform (`sawtooth`, `square`, `triangle`, `sine`), unison detune, octave-down sub oscillator, saturation drive, resonant lowpass filter with key-tracking and envelope modulation, ADSR amplitude envelope, legato pitch glide (`acid`, `bass`, `lead`), per-voice LFO (`pitch`, `filter`, `amp`), and tempo-synced ping-pong delay + algorithmic reverb sends feeding a sidechain ducking bus and master compressor. Drum tracks feature 8 synthesized pieces (`kick`, `rim`, `snare`, `clap`, `hat`, `tom`, `openHat`, `cymbal`) with open-hat choke.
 
-每条合成音轨是一个减法合成器：波形（锯齿/方波/三角/正弦）、齐奏失谐、低八度振荡器、过载、低通滤波器（截止、共鸣、包络扫频）、ADSR 包络、一个可作用于音高、滤波或音量的 LFO，以及随速度同步的附点八分回声和混响两路发送，主总线上有压缩器。鼓轨是 8 件套合成鼓，有四套鼓组可选，鼓件按自身长度响完，不受音符长度影响（底鼓 C2、边击 C#2、军鼓 D2、拍手 D#2、闭镲 F#2、通鼓 A2、开镲 A#2、吊镲 C#3）。
+Theme colors follow the host `--dsw-alias-*` CSS variables for light and dark modes.
 
-## 安装
+## Installation
 
 ```bash
 npm install
@@ -46,12 +45,16 @@ npm run build
 dsh plugin --profile <profile> add /path/to/dsh-synthesizer
 ```
 
-Host 的 Fetch 路由只投递精确的 `GET` 和 `POST`。列出和读取是 `GET /api/dsh-synthesizer/projects`（带 `?id=` 时读一个工程），保存是 `POST` 同一路径，删除是 `POST /api/dsh-synthesizer/projects/delete`。
+Host fetch routes use exact `GET` and `POST` paths: `GET /api/dsh-synthesizer/projects` (or `?id=<id>`), `POST /api/dsh-synthesizer/projects`, and `POST /api/dsh-synthesizer/projects/delete`.
 
-## 开发
+## Development
 
 ```bash
-npm test
 npm run typecheck
+npm test
 npm run build
 ```
+
+## License
+
+MIT
